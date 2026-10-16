@@ -18,6 +18,12 @@
   torbellino...), `knock` con choque contra muros (`slam`), zonas que siguen a
   un robot (`follow`), cúpulas que frenan proyectiles (`dome`) y canalizaciones
   (`CHANNELS` en skills.ts, se ejecutan cada paso del lanzamiento).
+- Mapas: `ARENAS` (5 arenas, cada una con su trampa y sus disposiciones) y
+  `LAYOUTS` (columnas, cajas rompibles, columnas que suben) en `data.ts`. La
+  partida guarda sus columnas en `w.pillars` (nunca usar una lista global) y los
+  objetos con vida en `w.props` (`addProp`, cajas y futuras barricadas/espejos).
+  Las trampas de las palancas están en `src/shared/traps.ts` (con `trapGood` /
+  `trapDodge` para la IA); dañan a todos por igual y siempre avisan antes.
 - La IA de los bots (`src/shared/ai.ts`) usa la pista `SkillDef.ai` de cada skill.
   Tras tocar equilibrio, pasar `bun run sim` (partidas bot contra bot con
   porcentajes de victoria 1v1 y 2v2 y recuento de skills usadas).
@@ -32,4 +38,5 @@
 bun run check            # tsc --noEmit
 bun run sim              # partidas automáticas bot contra bot (equilibrio)
 bun run dev              # http://localhost:3000  (?play=merlix,coltron arranca un 1v1 directo)
+                         #   &arena=N&layout=N eligen mapa · &full energía llena · &debug deja window.rb.world
 ```

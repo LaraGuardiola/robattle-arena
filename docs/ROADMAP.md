@@ -8,6 +8,14 @@ arena + palancas que activan trampas). Antes de empezar, leer `CLAUDE.md`.
 
 ## 0. Estado actual (para situarse rápido)
 
+**Hecho (pasos 1–3 del orden de trabajo):** disposiciones de columnas por arena
+con selector en la sala (y "Al azar"), arenas Desguace (cajas rompibles) y
+Núcleo (columnas que suben a los 30 s), entidad `Prop` con vida (`w.props`),
+estado "por los aires" (`w.launchUp`), palancas y las 5 trampas
+(`src/shared/traps.ts`) con IA que las usa y las esquiva. Las cintas
+transportadoras de la Fábrica quedan pendientes. Siguiente: paso 4 (mecánicas
+de proyectil) y la tanda 1 de campeones.
+
 - 10 campeones en `src/shared/data.ts` (`CHAMPS`), comportamiento en
   `src/shared/skills.ts` (`SKILLS` + `CHANNELS` para canalizaciones).
 - Slots fijos: `r2` básico (mantener), `l2` secundaria, `a` movilidad, `x`/`y`
@@ -20,7 +28,7 @@ arena + palancas que activan trampas). Antes de empezar, leer `CLAUDE.md`.
   torreta, cepo, zonas con aviso, rayo en cadena, teletransporte a la espalda,
   blink, salto, obús en parábola, singularidad que atrae, curas/escudos/robo de
   vida, torbellino que sigue al robot (`follow`).
-- Pilares: constante global `PILLARS` (4 pilares fijos en las 3 arenas).
+- Columnas: `w.pillars`, sacadas de `LAYOUTS` según la arena y la disposición.
 - Equilibrio: `bun run sim` (bots difíciles, 1v1 todos contra todos + 2v2
   aleatorio). Objetivo: cada campeón entre ~35% y ~62%. Con 20 campeones subir
   el número de partidas (`bun run sim 10` o más) porque el ruido crece.

@@ -1,8 +1,9 @@
 // IA de los bots: se mueven a su distancia favorita, esquivan proyectiles,
 // apuntan con anticipación y usan cada skill según su pista (SkillDef.ai).
 
-import { ARENA_RX, ARENA_RY, CAPSULE_HEAL, SLOT_BIT, type Difficulty, type Slot } from "./data";
+import { ARENA_RX, ARENA_RY, CAPSULE_HEAL, FIGHTER_R, SLOT_BIT, type Difficulty, type Slot } from "./data";
 import { dist2 } from "./math";
+import { trapDodge, trapGood } from "./traps";
 import type { Fighter, World } from "./world";
 
 export interface Bot {
@@ -18,12 +19,15 @@ export interface Bot {
   ax?: number;
   ay?: number;
   dodge?: [number, number];
+  /** ir a pisar una palanca */
+  goto?: [number, number];
 }
 
 const REACT = [0.32, 0.2, 0.1];
 const AIM_ERR = [0.3, 0.14, 0.05];
 const DODGE = [0.1, 0.35, 0.6];
 const SKILL_USE = [0.35, 0.7, 1];
+const LEVER_USE = [0.05, 0.25, 0.5];
 /** velocidad media de proyectil para anticipar */
 const LEAD_SPEED: Record<string, number> = { revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330 };
 
@@ -113,9 +117,21 @@ export function botThink(w: World, f: Fighter, dt: number) {
     mx = cx / cl * 1.5;
     my = cy / cl * 1.5;
   }
+  [mx, my] = steer(w, f, mx, my, b.strafe);
+  if (b.goto) {
+    const gx = b.goto[0] - f.x, gy = b.goto[1] - f.y, gl = Math.hypot(gx, gy) || 1;
+    mx = gx / gl;
+    my = gy / gl;
+  }
   if (b.dodge) {
     mx = mx * 0.3 + b.dodge[0] * 1.6;
     my = my * 0.3 + b.dodge[1] * 1.6;
+  }
+  // trampas avisadas: salir de la zona manda sobre todo lo demás
+  const td = b.diff > 0 || R.next() < 0.5 ? trapDodge(w, f) : null;
+  if (td) {
+    mx = mx * 0.2 + td[0] * 1.8;
+    my = my * 0.2 + td[1] * 1.8;
   }
   // bordes de la arena y muerte súbita
   const edge = Math.hypot(f.x / (ARENA_RX * w.storm), f.y / (ARENA_RY * w.storm));
@@ -143,12 +159,46 @@ export function botThink(w: World, f: Fighter, dt: number) {
   f.input = { mx, my, ax: Math.cos(ang) * ad, ay: Math.sin(ang) * ad, b: b.wantB };
 }
 
+/** Rodea columnas y objetos que haya justo delante en la dirección de marcha. */
+function steer(w: World, f: Fighter, mx: number, my: number, side: number): [number, number] {
+  const ml = Math.hypot(mx, my);
+  if (ml < 0.05) return [mx, my];
+  const ux = mx / ml, uy = my / ml;
+  const obs: { x: number; y: number; r: number }[] = [...w.pillars];
+  for (const p of w.props) if (p.solid) obs.push({ x: p.x, y: p.y, r: p.r + p.len / 2 });
+  for (const o of obs) {
+    const rx = o.x - f.x, ry = o.y - f.y;
+    const along = rx * ux + ry * uy;
+    if (along <= 0 || along > o.r + 30) continue;
+    const across = rx * -uy + ry * ux;
+    const need = o.r + FIGHTER_R + 4;
+    if (Math.abs(across) > need) continue;
+    // pasa por el lado contrario a donde queda el centro del obstáculo
+    const s = Math.abs(across) < 1 ? side : across > 0 ? -1 : 1;
+    return [ux * 0.35 + -uy * s, uy * 0.35 + ux * s];
+  }
+  return [mx, my];
+}
+
 /** Elige qué botón mantener y hacia dónde apuntar hasta la próxima decisión. */
 function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[], enemies: Fighter[]) {
   const b = f.bot!;
   const R = w.rng;
   b.wantB = 0;
   b.ax = b.ay = undefined;
+  b.goto = undefined;
+  // palancas: dispararle o pisarla si la trampa pillaría al rival y no a nosotros
+  if (w.leversReady() && R.next() < LEVER_USE[b.diff]! && trapGood(w, f)) {
+    const l = w.levers.reduce((m, q) => (dist2(q.x, q.y, f.x, f.y) < dist2(m.x, m.y, f.x, f.y) ? q : m));
+    const ld = Math.hypot(l.x - f.x, l.y - f.y), r2 = f.def.skills.r2;
+    if (r2.aim === "line" && ld < r2.range * 0.9 && w.canUse(f, "r2") && w.clearLine(f.x, f.y, l.x, l.y - 4)) {
+      b.wantB = SLOT_BIT.r2;
+      b.ax = l.x;
+      b.ay = l.y - 4;
+      return;
+    }
+    if (ld < 90) b.goto = [l.x, l.y];
+  }
   const clear = w.clearLine(f.x, f.y, t.x, t.y);
   const hpk = f.hp / f.maxHp;
   const closest = enemies.reduce((m, e) => Math.min(m, Math.hypot(e.x - f.x, e.y - f.y)), Infinity);

@@ -12,6 +12,8 @@ export interface SaveData {
   size: 1 | 2;
   wins: number;
   arena: number;
+  /** disposición de columnas (-1 = al azar) */
+  layout: number;
   diff: Difficulty;
   /** último campeón elegido por cada dispositivo ("kb", "pad0"...) */
   champs: Record<string, ChampId>;
@@ -21,7 +23,7 @@ export interface SaveData {
 const KEY = "robattle-arena-v1";
 const DEFAULTS: SaveData = {
   name: "", vol: 0.7, muted: false, dmgNums: true, shake: true, assist: true,
-  size: 1, wins: 3, arena: 0, diff: 1, champs: {}, stats: { games: 0, wins: 0 },
+  size: 1, wins: 3, arena: 0, layout: 0, diff: 1, champs: {}, stats: { games: 0, wins: 0 },
 };
 
 function load(): SaveData {

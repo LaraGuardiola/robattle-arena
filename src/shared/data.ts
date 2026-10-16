@@ -17,12 +17,43 @@ export function clampArena(x: number, y: number, m: number): [number, number] {
 }
 
 export interface Pillar { x: number; y: number; r: number }
-export const PILLARS: Pillar[] = [
-  { x: -115, y: -78, r: 11 },
-  { x: 115, y: -78, r: 11 },
-  { x: -115, y: 78, r: 11 },
-  { x: 115, y: 78, r: 11 },
-];
+
+/**
+ * Disposición de columnas de una arena. Todas son simétricas respecto a x = 0
+ * (un equipo por lado). `crates`: cajas rompibles; `rise`: columnas que suben
+ * del suelo a mitad de ronda.
+ */
+export interface Layout {
+  name: string;
+  pillars: Pillar[];
+  crates?: [number, number][];
+  rise?: { at: number; pillars: Pillar[] };
+}
+const sym = (x: number, y: number, r: number): Pillar[] => (x ? [{ x: -x, y, r }, { x, y, r }] : [{ x, y, r }]);
+export const LAYOUTS: Record<string, Layout> = {
+  classic: { name: "Clásico", pillars: [...sym(115, -78, 11), ...sym(115, 78, 11)] },
+  diamond: { name: "Rombo", pillars: [...sym(0, -95, 13), ...sym(0, 95, 13), ...sym(150, 0, 11)] },
+  halls: { name: "Pasillos", pillars: [...sym(70, -55, 9), ...sym(70, 0, 9), ...sym(70, 55, 9)] },
+  crown: {
+    name: "Corona",
+    pillars: [0, 60, 120, 180, 240, 300].map((d) => ({ x: Math.round(Math.cos((d * Math.PI) / 180) * 90), y: Math.round(Math.sin((d * Math.PI) / 180) * 80), r: 8 })),
+  },
+  scrap: { name: "Desguace", pillars: [...sym(110, -70, 11), ...sym(110, 70, 11)], crates: [[-40, -110], [40, -110], [-40, 110], [40, 110], [-175, 0], [175, 0]] },
+  core: { name: "Núcleo", pillars: [], rise: { at: 30, pillars: sym(80, 0, 11) } },
+};
+export type LayoutId = keyof typeof LAYOUTS;
+export const CRATE_HP = 40;
+export const CRATE_R = 8;
+
+/** Palancas: una por lado. Activan la trampa de la arena (daña a todos por igual). */
+export const LEVERS: [number, number][] = [[-178, 108], [178, 108]];
+/** segundos de ronda antes de que se puedan usar */
+export const LEVER_FIRST = 10;
+/** recarga compartida tras activar cualquiera */
+export const LEVER_CD = 25;
+/** segundos encima para activarla (también se activa golpeándola) */
+export const LEVER_HOLD = 1;
+export type TrapKind = "geyser" | "press" | "laser" | "magnet" | "pulse";
 
 /** Puntos de salida por equipo (1v1 usa el primero). */
 export const SPAWNS: [number, number][][] = [
@@ -308,9 +339,14 @@ export const CHAMP_IDS = Object.keys(CHAMPS) as ChampId[];
 export type Difficulty = 0 | 1 | 2;
 export const DIFF_NAMES = ["Fácil", "Normal", "Difícil"];
 
-/** Arenas: temática de suelo (tiles.ts) y música. */
-export const ARENAS = [
-  { name: "Parque Robattle", theme: 0, track: "park" },
-  { name: "Fábrica Omega", theme: 2, track: "factory" },
-  { name: "Ciudad Neón", theme: 3, track: "neon" },
+/** Arenas: temática de suelo (tiles.ts), música, trampa de las palancas y disposiciones de columnas. */
+export interface ArenaDef { name: string; theme: number; track: string; trap: TrapKind; trapName: string; layouts: LayoutId[] }
+export const ARENAS: ArenaDef[] = [
+  { name: "Parque Robattle", theme: 0, track: "park", trap: "geyser", trapName: "¡GÉISERES!", layouts: ["classic", "diamond", "halls", "crown"] },
+  { name: "Fábrica Omega", theme: 2, track: "factory", trap: "press", trapName: "¡PRENSA HIDRÁULICA!", layouts: ["classic", "halls", "diamond", "crown"] },
+  { name: "Ciudad Neón", theme: 3, track: "neon", trap: "laser", trapName: "¡REJILLA LÁSER!", layouts: ["classic", "crown", "diamond", "halls"] },
+  { name: "Desguace", theme: 1, track: "scrap", trap: "magnet", trapName: "¡GRÚA ELECTROIMÁN!", layouts: ["scrap", "classic", "halls"] },
+  { name: "Núcleo", theme: 4, track: "core", trap: "pulse", trapName: "¡PULSO DE MEDALLA!", layouts: ["core", "diamond", "crown"] },
 ];
+/** Nombre de la disposición elegida en la sala (-1 = al azar). */
+export const layoutName = (arena: number, layout: number) => (layout < 0 ? "Al azar" : LAYOUTS[(ARENAS[arena] ?? ARENAS[0]!).layouts[layout] ?? "classic"]!.name);

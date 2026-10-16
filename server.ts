@@ -31,6 +31,8 @@ interface Room {
   size: 1 | 2;
   wins: number;
   arena: number;
+  /** disposición de columnas (-1 = al azar) */
+  layout: number;
   world: World | null;
   /** id de cliente -> id de robot en la partida */
   fighterOf: Map<number, number>;
@@ -58,7 +60,7 @@ const randChamp = () => CHAMP_IDS[Math.floor(Math.random() * CHAMP_IDS.length)]!
 const emptySeat = (diff: Difficulty = 1): SeatInfo => ({ owner: 0, name: "", champ: randChamp(), ready: false, diff });
 
 function roomState(r: Room): ServerMsg {
-  return { t: "room", code: r.code, host: r.host, seats: r.seats, size: r.size, wins: r.wins, arena: r.arena, inGame: !!r.world };
+  return { t: "room", code: r.code, host: r.host, seats: r.seats, size: r.size, wins: r.wins, arena: r.arena, layout: r.layout, inGame: !!r.world };
 }
 
 function newCode() {
@@ -128,7 +130,7 @@ function startGame(r: Room) {
       specs.push({ id, name: human ? seat.name : `CPU ${CHAMPS[seat.champ].name}`, champ: seat.champ, team: t, human, diff: seat.diff });
       if (human) r.fighterOf.set(seat.owner, id);
     }
-  const w = new World({ seed, wins: r.wins, arena: r.arena }, specs);
+  const w = new World({ seed, wins: r.wins, arena: r.arena, layout: r.layout }, specs);
   r.world = w;
   r.endAt = 0;
   for (const c of r.clients.values()) send(c, { t: "start", you: r.fighterOf.get(c.id) ?? 0 });
@@ -171,7 +173,7 @@ function onMessage(c: Client, m: ClientMsg) {
     case "create": {
       const room: Room = {
         code: newCode(), host: c.id, clients: new Map(), seats: [0, 1].map(() => [emptySeat(), emptySeat()]),
-        size: 1, wins: 3, arena: 0, world: null, fighterOf: new Map(), loop: null, endAt: 0,
+        size: 1, wins: 3, arena: 0, layout: 0, world: null, fighterOf: new Map(), loop: null, endAt: 0,
       };
       rooms.set(room.code, room);
       joinRoom(c, room);
@@ -237,7 +239,9 @@ function onMessage(c: Client, m: ClientMsg) {
         if (size === 1 && r.seats.some((row) => row[1]!.owner > 0)) return send(c, { t: "err", msg: "Hay demasiados jugadores para un 1v1." });
         r.size = size;
         r.wins = Math.max(1, Math.min(5, Number(m.wins) | 0 || 3));
-        r.arena = Math.max(0, Math.min(ARENAS.length - 1, Number(m.arena) | 0));
+        const arena = Math.max(0, Math.min(ARENAS.length - 1, Number(m.arena) | 0));
+        r.layout = arena !== r.arena ? 0 : Math.max(-1, Math.min(ARENAS[arena]!.layouts.length - 1, Number(m.layout) | 0));
+        r.arena = arena;
         publish(r, roomState(r));
       }
       break;

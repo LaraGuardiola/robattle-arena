@@ -1,9 +1,9 @@
 // Dibuja una instantánea (Snap) en un canvas de baja resolución que luego se
 // escala a múltiplos enteros: el píxel queda limpio a cualquier tamaño.
 
-import { ARENAS, ARENA_RX, ARENA_RY, CHAMPS, PILLARS, SLOTS, TEAM_COLORS, type SkillDef } from "../shared/data";
+import { ARENAS, ARENA_RX, ARENA_RY, CHAMPS, SLOTS, TEAM_COLORS, type SkillDef } from "../shared/data";
 import { TAU } from "../shared/math";
-import { PROJ_KINDS, PR_STRIDE, ST, ZONE_KINDS, ZN_STRIDE, type Ev, type FSnap, type Snap } from "../shared/protocol";
+import { LV_STRIDE, PP_STRIDE, PROJ_KINDS, PROP_KINDS, PR_STRIDE, ST, ZONE_KINDS, ZN_STRIDE, type Ev, type FSnap, type Snap } from "../shared/protocol";
 import { CAPSULE_ART } from "./art";
 import { artSprite, projSprite, robotSprite, robotTint } from "./sprites";
 import { bakeArena, bakePillar } from "./tiles";
@@ -37,7 +37,9 @@ export class Renderer {
   shakeOn = true;
   arena: { canvas: HTMLCanvasElement; ox: number; oy: number } | null = null;
   arenaIdx = -1;
-  pillar: HTMLCanvasElement | null = null;
+  /** columnas horneadas por radio */
+  pillars = new Map<number, HTMLCanvasElement>();
+  theme = 0;
   seed: number;
 
   constructor(canvas: HTMLCanvasElement, seed: number) {
@@ -65,7 +67,8 @@ export class Renderer {
     this.arenaIdx = idx;
     const theme = (ARENAS[idx] ?? ARENAS[0]!).theme;
     this.arena = bakeArena(this.seed, theme);
-    this.pillar = bakePillar(theme, PILLARS[0]!.r);
+    this.theme = theme;
+    this.pillars.clear();
   }
 
   /** Pantalla (px CSS) -> mundo. */
@@ -127,6 +130,10 @@ export class Renderer {
       case "hypno": push(0.45); break;
       case "drain": push(0.22); break;
       case "bolt": push(0.2); this.burst(a, b, 5, "#bff6ff", 60); break;
+      case "lever": push(0.4); this.sparkle(x, y, "#ffd23f", 12); this.kick(2); break;
+      case "geyser": this.burst(x, y, 18, "#7fe3ff", 90, 2); this.burst(x, y, 8, "#ffffff", 60); break;
+      case "crate": this.burst(x, y - 6, 18, "#9a5632", 90, 2); this.burst(x, y - 6, 8, "#d8a820", 60); this.kick(2); break;
+      case "scrap": this.burst(x, y - 4, 22, "#7d8499", 110, 2); this.burst(x, y - 4, 10, "#ff8a2b", 80); break;
       case "log": push(0.7); this.burst(x, y - 4, 10, "#dfe4ee", 50, 2); break;
     }
   }
@@ -242,7 +249,12 @@ export class Renderer {
     type D = { y: number; f: () => void };
     const list: D[] = [];
     for (const f of s.f) if (!(f.st & ST.dead)) list.push({ y: f.y, f: () => this.drawFighter(f, X, Y, now, localTeams) });
-    for (const p of PILLARS) list.push({ y: p.y, f: () => this.drawPillar(p.x, p.y, X, Y) });
+    for (let i = 0; i < s.pl.length; i += 3) {
+      const x = s.pl[i]!, y = s.pl[i + 1]!, r = s.pl[i + 2]!;
+      list.push({ y, f: () => this.drawPillar(x, y, r, X, Y) });
+    }
+    for (let i = 0; i < s.pp.length; i += PP_STRIDE) list.push({ y: s.pp[i + 3]!, f: () => this.drawProp(s.pp, i, X, Y, now) });
+    for (let i = 0; i < s.lv.length; i += LV_STRIDE) list.push({ y: s.lv[i + 1]!, f: () => this.drawLever(s.lv, i, X, Y, now) });
     if (s.orb) {
       const [ox, oy, hp] = s.orb;
       list.push({ y: oy, f: () => this.drawOrb(ox, oy, hp, X, Y, now) });
@@ -256,6 +268,15 @@ export class Renderer {
         const raw = s.zn[i + 6]!;
         this.drawSmoke(s.zn[i + 2]!, s.zn[i + 3]!, s.zn[i + 4]!, (raw >= 1000 ? raw - 1000 : raw) / 100, X, Y, now, 0.35);
       }
+
+    // ---- trampas que caen desde arriba (por encima de los robots)
+    for (let i = 0; i < s.zn.length; i += ZN_STRIDE) {
+      const kind = ZONE_KINDS[s.zn[i + 1]!];
+      if (kind === "press" || kind === "magnet") {
+        const raw = s.zn[i + 6]!;
+        this.drawOverhead(kind, s.zn[i + 2]!, s.zn[i + 3]!, s.zn[i + 4]!, raw >= 1000, (raw >= 1000 ? raw - 1000 : raw) / 100, X, Y, now);
+      }
+    }
 
     // ---- proyectiles
     for (let i = 0; i < s.pr.length; i += PR_STRIDE) this.drawProj(s.pr, i, X, Y, now);
@@ -505,11 +526,132 @@ export class Renderer {
     if (tag) this.label(px, top - 6, tag, "#ffd23f");
   }
 
-  drawPillar(x: number, y: number, X: (n: number) => number, Y: (n: number) => number) {
-    const spr = this.pillar!;
-    const r = PILLARS[0]!.r;
+  drawPillar(x: number, y: number, r: number, X: (n: number) => number, Y: (n: number) => number) {
+    let spr = this.pillars.get(r);
+    if (!spr) this.pillars.set(r, (spr = bakePillar(this.theme, r)));
     this.shadow(X(x), Y(y) + 2, r + 2);
     this.ctx.drawImage(spr, X(x) - (spr.width >> 1), Y(y) + Math.round(r * 0.6) - spr.height + 2);
+  }
+
+  // ------------------------------------------------------------ objetos y palancas
+  drawProp(pp: number[], i: number, X: (n: number) => number, Y: (n: number) => number, _now: number) {
+    const ctx = this.ctx;
+    const kind = PROP_KINDS[pp[i + 1]!]!, x = pp[i + 2]!, y = pp[i + 3]!, r = pp[i + 4]!, hp = pp[i + 6]! / 100;
+    const px = X(x), py = Y(y);
+    if (kind === "crate") {
+      // caja de madera: tapa clara, frontal con tablas y grietas según la vida
+      const w = r * 2, h = Math.round(r * 1.7), top = py - h - 2;
+      this.shadow(px, py + 1, r + 1);
+      ctx.fillStyle = "#17121f";
+      ctx.fillRect(px - r - 1, top - 4, w + 2, h + 6);
+      ctx.fillStyle = "#c88a58";
+      ctx.fillRect(px - r, top - 3, w, 4);
+      ctx.fillStyle = "#9a5632";
+      ctx.fillRect(px - r, top + 1, w, h);
+      ctx.fillStyle = "#7a4428";
+      for (let k = 3; k < h; k += 4) ctx.fillRect(px - r, top + 1 + k, w, 1);
+      ctx.fillStyle = "#d8a820";
+      ctx.fillRect(px - r, top + 1, 2, h);
+      ctx.fillRect(px + r - 2, top + 1, 2, h);
+      ctx.fillStyle = "#17121f";
+      if (hp < 0.7) {
+        ctx.fillRect(px - 2, top + 3, 1, 4);
+        ctx.fillRect(px - 1, top + 6, 1, 3);
+      }
+      if (hp < 0.4) {
+        ctx.fillRect(px + 3, top + 2, 1, 5);
+        ctx.fillRect(px + 2, top + 7, 1, 4);
+        ctx.fillRect(px - 5, top + 9, 3, 1);
+      }
+    }
+  }
+
+  drawLever(lv: number[], i: number, X: (n: number) => number, Y: (n: number) => number, now: number) {
+    const ctx = this.ctx;
+    const x = lv[i]!, y = lv[i + 1]!, state = lv[i + 2]!, prog = lv[i + 3]! / 100;
+    const px = X(x), py = Y(y);
+    const ready = state === 0;
+    if (ready) this.disc(px, py, 11 + Math.sin(now * 5), "#ffd23f", 0.14);
+    this.shadow(px, py + 1, 6);
+    // base
+    ctx.fillStyle = "#17121f";
+    ctx.fillRect(px - 6, py - 4, 13, 6);
+    ctx.fillStyle = "#5a6078";
+    ctx.fillRect(px - 5, py - 3, 11, 4);
+    ctx.fillStyle = "#8a90a8";
+    ctx.fillRect(px - 5, py - 3, 11, 1);
+    // palanca: arriba si está lista, abajo si está recargando
+    const ang = ready ? -1.2 + prog * 1.4 : 0.9;
+    const ex = px + Math.round(Math.cos(ang - Math.PI / 2 + 0.6) * 9), ey = py - 3 + Math.round(Math.sin(ang - Math.PI / 2 + 0.6) * 9);
+    ctx.strokeStyle = "#17121f";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px, py - 3);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    ctx.strokeStyle = "#c9cfdc";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    this.disc(ex, ey, 2.5, "#17121f", 1);
+    this.disc(ex, ey, 1.6, ready ? (Math.floor(now * 4) % 2 ? "#ff3b4e" : "#ff8a2b") : "#5a5a6a", 1);
+    // luz de estado
+    ctx.fillStyle = ready ? "#5fe08a" : state === 1 ? "#ff3b4e" : "#3a3460";
+    ctx.fillRect(px + 3, py - 2, 2, 2);
+    if (ready && prog > 0) {
+      ctx.fillStyle = "#17121f";
+      ctx.fillRect(px - 9, py + 4, 18, 3);
+      ctx.fillStyle = "#ffd23f";
+      ctx.fillRect(px - 8, py + 5, Math.round(16 * prog), 1);
+    }
+  }
+
+  /** Lo que cae desde arriba: la prensa de la fábrica y el imán de la grúa. */
+  drawOverhead(kind: string, x: number, y: number, r: number, armed: boolean, prog: number, X: (n: number) => number, Y: (n: number) => number, now: number) {
+    const ctx = this.ctx;
+    if (kind === "press") {
+      // placa de metal que baja (aviso) y golpea (activa)
+      // en el aviso sólo se ve caer al final; al golpear se queda abajo y vuelve a subir
+      if (!armed && prog < 0.55) return;
+      const drop = armed ? 0 : Math.round(((1 - prog) / 0.45) ** 2 * 200);
+      const lift = armed ? Math.round(Math.max(0, prog - 0.5) * 2 * 220) : 0;
+      const off = drop + lift;
+      const x0 = X(x - r), w = r * 2;
+      const y0 = Y(-ARENA_RY) - 30 - off, y1 = Y(ARENA_RY) - 6 - off;
+      ctx.globalAlpha = armed ? 1 - Math.max(0, prog - 0.7) * 3 : 1;
+      ctx.fillStyle = "#17121f";
+      ctx.fillRect(x0 - 1, y0, w + 2, y1 - y0 + 8);
+      ctx.fillStyle = "#4a4f66";
+      ctx.fillRect(x0, y0, w, y1 - y0 + 6);
+      ctx.fillStyle = "#6a7088";
+      for (let yy = y0 + 4; yy < y1; yy += 12) ctx.fillRect(x0 + 1, yy, w - 2, 2);
+      // franjas de peligro en el borde de abajo
+      for (let k = 0; k < w; k += 4) {
+        ctx.fillStyle = (k >> 2) % 2 ? "#17121f" : "#ffd23f";
+        ctx.fillRect(x0 + k, y1 + 2, 4, 4);
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    // imán: disco colgando de un cable desde arriba
+    const fade = armed ? 1 : prog;
+    const hang = 40;
+    const px = X(x), py = Y(y) - hang;
+    ctx.globalAlpha = fade;
+    ctx.fillStyle = "#17121f";
+    ctx.fillRect(px - 1, 0, 3, py - 6);
+    ctx.fillStyle = "#9aa0b0";
+    ctx.fillRect(px, 0, 1, py - 6);
+    this.disc(px, py, 13, "#17121f", fade);
+    this.disc(px, py, 12, "#7a7068", fade);
+    this.disc(px, py - 2, 9, "#9aa0b0", fade);
+    const hot = armed && prog > 0.7;
+    ctx.fillStyle = hot && Math.floor(now * 12) % 2 ? "#ff3b4e" : "#4fb4ff";
+    ctx.fillRect(px - 6, py + 2, 12, 2);
+    if (armed && Math.random() < 0.5) {
+      const an = Math.random() * TAU;
+      this.parts.push({ x: x + Math.cos(an) * r * 0.8, y: y + Math.sin(an) * r * 0.6, z: 2, vx: -Math.cos(an) * 60, vy: -Math.sin(an) * 40, vz: 20, life: 0.4, max: 0.4, c: "#7fe3ff", s: 1, g: 0 });
+    }
+    ctx.globalAlpha = 1;
   }
 
   drawOrb(x: number, y: number, hp: number, X: (n: number) => number, Y: (n: number) => number, now: number) {
@@ -847,6 +989,124 @@ export class Renderer {
             const an = Math.random() * TAU;
             this.parts.push({ x: x + Math.cos(an) * r * 0.9, y: y + Math.sin(an) * r * 0.6, z: 4, vx: -Math.sin(an) * 60, vy: Math.cos(an) * 40, vz: 10, life: 0.3, max: 0.3, c: "#bff6ff", s: 1, g: 0 });
           }
+          break;
+        }
+        // ---- trampas (neutrales: avisan con el mismo lenguaje que las zonas de fuego)
+        case "geyser":
+        case "rise": {
+          const water = kind === "geyser";
+          if (!armed) {
+            this.disc(px, py, r, water ? "#3fd7ff" : "#ffd23f", 0.12 + prog * 0.15);
+            this.disc(px, py, r * prog, water ? "#7fe3ff" : "#ff8a2b", 0.3);
+            ctx.strokeStyle = Math.floor(now * (prog > 0.7 ? 16 : 8)) % 2 ? "#ffffff" : water ? "#3fd7ff" : "#ff3b4e";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            if (Math.random() < 0.3) this.parts.push({ x: x + (Math.random() - 0.5) * r, y, z: 0, vx: 0, vy: 0, vz: 30, life: 0.3, max: 0.3, c: water ? "#bff6ff" : "#c9cfdc", s: 1, g: 0 });
+          } else if (water) {
+            // columna de agua
+            const h = Math.round(Math.sin(Math.min(1, prog * 1.2) * Math.PI) * 46);
+            ctx.globalAlpha = 0.75;
+            ctx.fillStyle = "#3fd7ff";
+            ctx.fillRect(px - 7, py - h, 15, h);
+            ctx.fillStyle = "#bff6ff";
+            ctx.fillRect(px - 3, py - h, 7, h);
+            ctx.globalAlpha = 1;
+            this.disc(px, py, r, "#7fe3ff", 0.35 * (1 - prog));
+          }
+          break;
+        }
+        case "press": {
+          if (armed) break;
+          const blink = Math.floor(now * (prog > 0.6 ? 14 : 7)) % 2;
+          ctx.globalAlpha = 0.16 + prog * 0.2;
+          ctx.fillStyle = "#ff3b4e";
+          ctx.fillRect(X(x - r), Y(-ARENA_RY), r * 2, ARENA_RY * 2);
+          ctx.globalAlpha = 0.8;
+          ctx.fillStyle = blink ? "#ffd23f" : "#ff3b4e";
+          ctx.fillRect(X(x - r), Y(-ARENA_RY), 1, ARENA_RY * 2);
+          ctx.fillRect(X(x + r), Y(-ARENA_RY), 1, ARENA_RY * 2);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "laser": {
+          const dir = Math.cos(a) >= 0 ? 1 : -1;
+          // recortado a la elipse a esa altura
+          const half = ARENA_RX * Math.sqrt(Math.max(0, 1 - (y / ARENA_RY) ** 2));
+          const x0 = X(-half), x1 = X(half);
+          if (!armed) {
+            ctx.globalAlpha = 0.2 + prog * 0.3;
+            ctx.fillStyle = "#ff3b9e";
+            ctx.fillRect(x0, py - r, x1 - x0, r * 2);
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = Math.floor(now * (prog > 0.6 ? 16 : 8)) % 2 ? "#ffffff" : "#ff3b9e";
+            ctx.fillRect(x0, py - r, x1 - x0, 1);
+            ctx.fillRect(x0, py + r, x1 - x0, 1);
+            // emisor en el muro de salida
+            this.disc(dir > 0 ? x0 + 4 : x1 - 4, py - 4, 4, "#ff3b9e", 0.6 + prog * 0.4);
+            break;
+          }
+          // barrido: cabeza brillante y estela que se apaga
+          const front = -dir * ARENA_RX + dir * ARENA_RX * 2 * prog;
+          if (Math.abs(front) > half + 4) break;
+          const fx = X(front), tail = X(Math.max(-half, Math.min(half, front - dir * 70)));
+          for (const [col, w, al] of [["#ff3b9e", 7, 0.4], ["#ff7bd5", 3, 0.9], ["#ffffff", 1, 1]] as const) {
+            ctx.globalAlpha = al;
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            ctx.moveTo(tail, py - 4);
+            ctx.lineTo(fx, py - 4);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          this.disc(fx, py - 4, 5, "#ffffff", 0.9);
+          if (Math.random() < 0.9) this.burst(front, y + 2, 1, "#ff7bd5", 60);
+          break;
+        }
+        case "magnet": {
+          // sombra del imán y radio de atracción
+          const hot = armed && prog > 0.7;
+          this.disc(px, py, armed ? 25 : 25 * prog, hot ? "#ff3b4e" : "#17121f", hot ? 0.3 : 0.3);
+          ctx.strokeStyle = hot && Math.floor(now * 14) % 2 ? "#ffd23f" : "#ff3b4e";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(px, py, 25, 20, 0, 0, TAU);
+          ctx.stroke();
+          if (armed) {
+            ctx.globalAlpha = 0.25;
+            ctx.strokeStyle = "#4fb4ff";
+            ctx.setLineDash([2, 4]);
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, now * 2, now * 2 + TAU);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
+          break;
+        }
+        case "pulse": {
+          if (!armed) {
+            // el centro se carga
+            this.disc(px, py - 6, 10 + prog * 14, "#ffd23f", 0.15 + prog * 0.25);
+            ctx.strokeStyle = Math.floor(now * 14) % 2 ? "#fff6c8" : "#b06aff";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(px, py, 14 + prog * 10, (14 + prog * 10) * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            break;
+          }
+          const rx = Math.max(1, r), ry = rx * (ARENA_RY / ARENA_RX);
+          for (const [col, w, al] of [["#b06aff", 6, 0.35], ["#ffd23f", 2, 0.9], ["#fff6c8", 1, 1]] as const) {
+            ctx.globalAlpha = al;
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            ctx.ellipse(px, py, rx, ry, 0, 0, TAU);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
           break;
         }
         case "ray": {

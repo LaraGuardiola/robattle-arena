@@ -2,15 +2,16 @@
 // cliente (solitario y sofá) o en el servidor (LAN). No toca el DOM.
 
 import {
-  ARENA_RX, ARENA_RY, CAPSULE_AT, CAPSULE_HEAL, CAPSULE_POS, CHAMPS, ENERGY_MAX, ENERGY_PER_DMG, ENERGY_REGEN, FIGHTER_R,
-  ORB_AT, ORB_ENERGY, ORB_HEAL, ORB_HP, PILLARS, ROUND_COUNTDOWN, ROUND_END_PAUSE, SLOTS, SLOT_BIT, SPAWNS, SPAWNS_2V2,
+  ARENAS, ARENA_RX, ARENA_RY, CAPSULE_AT, CAPSULE_HEAL, CAPSULE_POS, CHAMPS, CRATE_HP, CRATE_R, ENERGY_MAX, ENERGY_PER_DMG, ENERGY_REGEN, FIGHTER_R,
+  LAYOUTS, LEVERS, LEVER_CD, LEVER_FIRST, LEVER_HOLD, ORB_AT, ORB_ENERGY, ORB_HEAL, ORB_HP, ROUND_COUNTDOWN, ROUND_END_PAUSE, SLOTS, SLOT_BIT, SPAWNS, SPAWNS_2V2,
   STORM_AT, STORM_DPS, STORM_MIN, STORM_TIME,
-  clampArena, type ChampDef, type ChampId, type Difficulty, type SkillDef, type Slot,
+  clampArena, type ArenaDef, type ChampDef, type ChampId, type Difficulty, type Layout, type Pillar, type SkillDef, type Slot,
 } from "./data";
 import { angleDiff, clamp, dist2, Rng, segDist2 } from "./math";
-import { NO_INPUT, PROJ_KINDS, ST, ZONE_KINDS, type Ev, type FSnap, type Input, type Phase, type Snap } from "./protocol";
+import { NO_INPUT, PROJ_KINDS, PROP_KINDS, ST, ZONE_KINDS, type Ev, type FSnap, type Input, type Phase, type Snap } from "./protocol";
 import { botThink, type Bot } from "./ai";
 import { CHANNELS, SKILLS } from "./skills";
+import { TRAPS } from "./traps";
 
 export const DT = 1 / 60;
 
@@ -153,6 +154,42 @@ export interface Zone {
   dead: boolean;
 }
 
+/**
+ * Objeto con vida (cajas, y más adelante barricadas, espejos, barriles...).
+ * Lo dañan proyectiles, golpes y explosiones de cualquier equipo. Si `len` > 0
+ * es una cápsula (segmento de largo `len` orientado según `a`) de grosor `r`.
+ */
+export interface Prop {
+  id: number;
+  kind: (typeof PROP_KINDS)[number];
+  owner: Fighter | null;
+  /** -1 = neutral */
+  team: number;
+  x: number;
+  y: number;
+  r: number;
+  a: number;
+  len: number;
+  hp: number;
+  maxHp: number;
+  /** segundos que le quedan (Infinity = hasta romperse) */
+  t: number;
+  /** frena a los robots */
+  solid: boolean;
+  /** para los proyectiles */
+  stopsProj: boolean;
+  onBreak?: (w: World, p: Prop) => void;
+  dead: boolean;
+}
+
+export interface Lever {
+  x: number;
+  y: number;
+  /** segundos que alguien lleva encima */
+  prog: number;
+  by: Fighter | null;
+}
+
 export interface Aim {
   dx: number;
   dy: number;
@@ -176,6 +213,8 @@ export interface WorldOpts {
   /** rondas para ganar */
   wins: number;
   arena: number;
+  /** índice en ARENAS[arena].layouts (-1 = al azar) */
+  layout?: number;
 }
 
 const DMG_POPUP = 0, HEAL_POPUP = 1, SHIELD_POPUP = 2, TEXT_POPUP = 3;
@@ -193,6 +232,14 @@ export class World {
   winner = -1;
   wins: number;
   arena: number;
+  arenaDef: ArenaDef;
+  layout: Layout;
+  pillars: Pillar[] = [];
+  props: Prop[] = [];
+  levers: Lever[] = [];
+  /** recarga compartida de las palancas */
+  leverCd = 0;
+  risen = false;
   orb: { x: number; y: number; hp: number; last: number } | null = null;
   orbDone = false;
   caps: { x: number; y: number; on: boolean }[] = [];
@@ -207,6 +254,10 @@ export class World {
     this.rng = new Rng(opts.seed);
     this.wins = opts.wins;
     this.arena = opts.arena;
+    this.arenaDef = ARENAS[opts.arena] ?? ARENAS[0]!;
+    const ids = this.arenaDef.layouts;
+    const li = opts.layout ?? 0;
+    this.layout = LAYOUTS[ids[li < 0 || li >= ids.length ? this.rng.int(0, ids.length - 1) : li]!]!;
     const perTeam = [0, 0];
     for (const s of specs) {
       const def = CHAMPS[s.champ];
@@ -253,6 +304,16 @@ export class World {
     }
     this.projs = [];
     this.zones = [];
+    this.pillars = this.layout.pillars.map((p) => ({ ...p }));
+    this.props = [];
+    for (const [x, y] of this.layout.crates ?? [])
+      this.addProp(null, { kind: "crate", x, y, r: CRATE_R, hp: CRATE_HP, onBreak: (w, p) => {
+        w.fx("crate", p.x, p.y, 0, 0);
+        w.sfx("crate");
+      } });
+    this.levers = LEVERS.map(([x, y]) => ({ x, y, prog: 0, by: null }));
+    this.leverCd = 0;
+    this.risen = false;
     this.orb = null;
     this.orbDone = false;
     this.caps = [];
@@ -329,6 +390,7 @@ export class World {
     this.separate();
     this.updateProjs(sdt);
     this.updateZones(sdt);
+    this.updateProps(sdt);
     if (this.phase === "fight") this.checkRoundEnd();
   }
 
@@ -366,6 +428,23 @@ export class World {
         }
       }
     }
+    const rise = this.layout.rise;
+    if (rise && !this.risen && t >= rise.at - 1.5) {
+      this.risen = true;
+      this.ev("t", "¡SUBEN LAS COLUMNAS!", "#ffd23f");
+      for (const p of rise.pillars)
+        this.zone(this.fighters[0]!, {
+          kind: "rise", x: p.x, y: p.y, r: p.r, delay: 1.5, dur: 0.1, team: -1,
+          onArm: (w) => {
+            w.pillars.push({ ...p });
+            for (const f of w.fighters) if (!f.dead) w.pushOutPillars(f);
+            w.fx("boom", p.x, p.y, p.r + 6, 1);
+            w.fx("shake", p.x, p.y, 4, 0);
+            w.sfx("slam");
+          },
+        });
+    }
+    this.updateLevers(dt);
     for (const c of this.caps) {
       if (!c.on) continue;
       const f = this.fighters.find((f) => !f.dead && dist2(f.x, f.y, c.x, c.y) < 12 * 12);
@@ -376,6 +455,50 @@ export class World {
         this.sfx("heal");
       }
     }
+  }
+
+  // ============================================================ palancas
+  leversReady() {
+    return this.phase === "fight" && this.pt >= LEVER_FIRST && this.leverCd <= 0;
+  }
+
+  updateLevers(dt: number) {
+    if (this.leverCd > 0) this.leverCd -= dt;
+    const ready = this.leversReady();
+    for (const l of this.levers) {
+      const on = ready ? this.fighters.find((f) => !f.dead && !f.motion?.air && dist2(f.x, f.y, l.x, l.y) < 11 * 11) : undefined;
+      if (on) {
+        if (l.by !== on) l.prog = Math.max(0, l.prog - 0.3);
+        l.by = on;
+        l.prog += dt;
+        if (l.prog >= LEVER_HOLD) this.pullLever(l, on);
+      } else {
+        l.prog = Math.max(0, l.prog - dt * 2);
+        if (!l.prog) l.by = null;
+      }
+    }
+  }
+
+  /** Golpe (proyectil, cuerpo a cuerpo o explosión) que puede activar una palanca. */
+  hitLever(x: number, y: number, r: number, by: Fighter) {
+    if (!this.leversReady()) return false;
+    const l = this.levers.find((l) => dist2(l.x, l.y - 4, x, y) < (r + 5) ** 2);
+    if (!l) return false;
+    this.pullLever(l, by);
+    return true;
+  }
+
+  pullLever(l: Lever, by: Fighter) {
+    if (!this.leversReady()) return;
+    this.leverCd = LEVER_CD;
+    for (const q of this.levers) {
+      q.prog = 0;
+      q.by = null;
+    }
+    this.ev("t", this.arenaDef.trapName, "#ff8a2b");
+    this.fx("lever", l.x, l.y, by.team, 0);
+    this.sfx("lever");
+    TRAPS[this.arenaDef.trap](this, by);
   }
 
   checkRoundEnd() {
@@ -589,8 +712,8 @@ export class World {
   /** Mueve con colisiones; devuelve true si algo lo ha frenado. */
   moveTo(f: Fighter, nx: number, ny: number, pillars: boolean) {
     let blocked = false;
-    if (pillars)
-      for (const p of PILLARS) {
+    if (pillars) {
+      for (const p of this.pillars) {
         const rr = p.r + FIGHTER_R, dx = nx - p.x, dy = ny - p.y, d2 = dx * dx + dy * dy;
         if (d2 < rr * rr) {
           const d = Math.sqrt(d2) || 1;
@@ -599,6 +722,18 @@ export class World {
           blocked = true;
         }
       }
+      for (const p of this.props) {
+        if (!p.solid || p.dead) continue;
+        const [qx, qy] = this.propPoint(p, nx, ny);
+        const rr = p.r + FIGHTER_R, dx = nx - qx, dy = ny - qy, d2 = dx * dx + dy * dy;
+        if (d2 < rr * rr) {
+          const d = Math.sqrt(d2) || 1;
+          nx = qx + (dx / d) * rr;
+          ny = qy + (dy / d) * rr;
+          blocked = true;
+        }
+      }
+    }
     const [cx, cy] = clampArena(nx, ny, FIGHTER_R);
     if (cx !== nx || cy !== ny) blocked = true;
     f.x = cx;
@@ -752,6 +887,14 @@ export class World {
     t.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: false, knock: true, h: 0, hit: new Set(), slam };
   }
 
+  /** Por los aires: sube y baja sin desplazarse; ni actúa ni se le puede tocar. */
+  launchUp(t: Fighter, dur: number, h = 26) {
+    if (!this.ccable(t)) return;
+    t.cast = null;
+    t.motion = { vx: 0, vy: 0, t: dur, total: dur, air: true, knock: true, h, hit: new Set() };
+    this.popup(t.x, t.y - 26, "¡POR LOS AIRES!", "#7fe3ff");
+  }
+
   fearFor(t: Fighter, src: Fighter, d: number) {
     if (!this.ccable(t)) return;
     t.fear = Math.max(t.fear, d);
@@ -789,7 +932,66 @@ export class World {
     }
     if (this.orb && dist2(this.orb.x, this.orb.y, f.x, f.y) < (range + 9) ** 2 && Math.abs(angleDiff(f.face, Math.atan2(this.orb.y - f.y, this.orb.x - f.x))) < arc / 2 + 0.3)
       this.hitOrb(f, dmg);
+    for (const p of this.props) {
+      if (p.dead) continue;
+      const [qx, qy] = this.propPoint(p, f.x, f.y);
+      if (dist2(qx, qy, f.x, f.y) < (range + p.r) ** 2 && Math.abs(angleDiff(f.face, Math.atan2(qy - f.y, qx - f.x))) < arc / 2 + 0.3) this.hurtProp(p, dmg);
+    }
+    for (const l of this.levers)
+      if (dist2(l.x, l.y, f.x, f.y) < (range + 5) ** 2 && Math.abs(angleDiff(f.face, Math.atan2(l.y - f.y, l.x - f.x))) < arc / 2 + 0.3) this.hitLever(l.x, l.y - 4, 1, f);
     return hits;
+  }
+
+  // ============================================================ objetos
+  addProp(owner: Fighter | null, o: { kind: Prop["kind"]; x: number; y: number; r: number; hp: number; a?: number; len?: number; t?: number; solid?: boolean; stopsProj?: boolean; team?: number; onBreak?: Prop["onBreak"] }) {
+    const p: Prop = {
+      id: this.nextId++, kind: o.kind, owner, team: o.team ?? owner?.team ?? -1, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
+      hp: o.hp, maxHp: o.hp, t: o.t ?? Infinity, solid: o.solid ?? true, stopsProj: o.stopsProj ?? true, onBreak: o.onBreak, dead: false,
+    };
+    this.props.push(p);
+    if (p.solid) for (const f of this.fighters) if (!f.dead && !f.motion?.air) this.moveTo(f, f.x, f.y, true);
+    return p;
+  }
+
+  /** Punto del objeto más cercano a (x, y): el centro, o el punto del segmento si es alargado. */
+  propPoint(p: Prop, x: number, y: number): [number, number] {
+    if (!p.len) return [p.x, p.y];
+    const c = Math.cos(p.a) * p.len / 2, s = Math.sin(p.a) * p.len / 2;
+    const ax = p.x - c, ay = p.y - s, dx = c * 2, dy = s * 2;
+    const k = clamp(((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+    return [ax + dx * k, ay + dy * k];
+  }
+
+  hurtProp(p: Prop, amt: number) {
+    if (p.dead || amt <= 0) return;
+    p.hp -= amt;
+    this.fx("spark", p.x, p.y - 6, 0, 0);
+    if (p.hp <= 0) this.breakProp(p);
+  }
+
+  breakProp(p: Prop) {
+    if (p.dead) return;
+    p.dead = true;
+    p.onBreak?.(this, p);
+  }
+
+  /** Daño en área a objetos y palancas (explosiones). */
+  blastProps(x: number, y: number, r: number, dmg: number, by: Fighter | null) {
+    for (const p of this.props) {
+      if (p.dead) continue;
+      const [qx, qy] = this.propPoint(p, x, y);
+      if (dist2(qx, qy, x, y) < (r + p.r) ** 2) this.hurtProp(p, dmg);
+    }
+    if (by) this.hitLever(x, y, r, by);
+  }
+
+  updateProps(dt: number) {
+    for (const p of this.props) {
+      if (p.dead || p.t === Infinity) continue;
+      p.t -= dt;
+      if (p.t <= 0) this.breakProp(p);
+    }
+    this.props = this.props.filter((p) => !p.dead);
   }
 
   hitOrb(f: Fighter, dmg: number) {
@@ -868,7 +1070,18 @@ export class World {
           break;
         }
         // pilares, muros de fuego, borde
-        let hitWall = PILLARS.some((q) => dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2);
+        let hitWall = this.pillars.some((q) => dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2);
+        if (!hitWall)
+          for (const q of this.props) {
+            if (q.dead || !q.stopsProj) continue;
+            const [qx, qy] = this.propPoint(q, p.x, p.y);
+            if (dist2(qx, qy, p.x, p.y) < (q.r + p.r) ** 2) {
+              hitWall = true;
+              this.hurtProp(q, p.orbDmg || 6);
+              break;
+            }
+          }
+        if (!hitWall && this.hitLever(p.x, p.y, p.r, p.owner)) hitWall = true;
         if (!hitWall)
           for (const z of this.zones)
             if (z.dome && z.armed && z.team !== p.team) {
@@ -903,10 +1116,10 @@ export class World {
   // ============================================================ zonas
   zone(f: Fighter, o: {
     kind: Zone["kind"]; x: number; y: number; r: number; delay: number; dur: number; a?: number; len?: number; tickEvery?: number; wall?: boolean;
-    dome?: boolean; follow?: Fighter; onArm?: Zone["onArm"]; onTick?: Zone["onTick"]; onEnd?: Zone["onEnd"];
+    dome?: boolean; follow?: Fighter; team?: number; onArm?: Zone["onArm"]; onTick?: Zone["onTick"]; onEnd?: Zone["onEnd"];
   }) {
     const z: Zone = {
-      id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
+      id: this.nextId++, owner: f, team: o.team ?? f.team, kind: o.kind, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
       delay: o.delay, dur: o.dur, t: 0, armed: o.delay <= 0, tickEvery: o.tickEvery ?? 0, tickT: 0, wall: !!o.wall, hit: new Set(),
       onArm: o.onArm, onTick: o.onTick, onEnd: o.onEnd, follow: o.follow, dome: !!o.dome, dead: false,
     };
@@ -968,7 +1181,8 @@ export class World {
 
   /** Línea de visión libre de pilares. */
   clearLine(x1: number, y1: number, x2: number, y2: number, pad = 2) {
-    return !PILLARS.some((p) => segDist2(p.x, p.y, x1, y1, x2, y2) < (p.r + pad) ** 2);
+    return !this.pillars.some((p) => segDist2(p.x, p.y, x1, y1, x2, y2) < (p.r + pad) ** 2)
+      && !this.props.some((p) => p.stopsProj && !p.len && segDist2(p.x, p.y, x1, y1, x2, y2) < (p.r + pad) ** 2);
   }
 
   // ============================================================ instantánea
@@ -1008,11 +1222,20 @@ export class World {
     for (const z of this.zones)
       zn.push(z.id, ZONE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), Math.round(z.r), Math.round(z.a * 100),
         Math.round(z.armed ? (z.t / z.dur) * 100 : (z.t / z.delay) * 100) + (z.armed ? 1000 : 0), z.team, Math.round(z.len));
+    const pl: number[] = [];
+    for (const p of this.pillars) pl.push(p.x, p.y, p.r);
+    const pp: number[] = [];
+    for (const p of this.props)
+      pp.push(p.id, PROP_KINDS.indexOf(p.kind), Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.a * 100),
+        Math.max(1, Math.round((p.hp / p.maxHp) * 100)), p.team, Math.round(p.len));
+    const lv: number[] = [];
+    const ready = this.leversReady();
+    for (const l of this.levers) lv.push(l.x, l.y, ready ? 0 : this.phase === "fight" && this.pt >= LEVER_FIRST ? 1 : 2, Math.round((l.prog / LEVER_HOLD) * 100));
     const ev = this.events;
     this.events = [];
     return {
       phase: this.phase, pt: Math.round(this.pt * 100) / 100, round: this.round, score: [...this.score], wins: this.wins, arena: this.arena,
-      f, pr, zn, orb: this.orb ? [this.orb.x, this.orb.y, Math.max(0, Math.ceil(this.orb.hp))] : null,
+      f, pr, zn, pl, pp, lv, orb: this.orb ? [this.orb.x, this.orb.y, Math.max(0, Math.ceil(this.orb.hp))] : null,
       caps: this.caps.flatMap((c) => (c.on ? [c.x, c.y] : [])),
       storm: Math.round(this.storm * 1000) / 1000, winner: this.winner, ev,
     };

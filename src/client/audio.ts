@@ -247,6 +247,17 @@ const SFX: Record<string, () => void> = {
     noise(0.3, 0.25, 6000, 0, sfxBus, 3);
     tone("sawtooth", 600, 1500, 0.25, 0.1);
   },
+  // ---- palancas y trampas
+  lever: () => {
+    tone("square", 200, 140, 0.08, 0.16);
+    [440, 0, 440, 0, 440].forEach((f, i) => f && tone("square", f, f, 0.12, 0.1, 0.12 + i * 0.12));
+  },
+  geyser: () => noise(0.6, 0.3, 2500, 0, sfxBus, 1),
+  lasergrid: () => tone("sawtooth", 1800, 600, 1.4, 0.08),
+  crate: () => {
+    noise(0.25, 0.3, 1800);
+    tone("square", 160, 60, 0.15, 0.12);
+  },
 };
 
 /** Reproduce un efecto con separación mínima y tope de voces. */
@@ -499,6 +510,8 @@ const TRACKS: Record<string, Song> = {
   park: S1_BOSS,
   factory: S3,
   neon: S4,
+  scrap: S2,
+  core: S2_BOSS,
   results: S5,
 };
 

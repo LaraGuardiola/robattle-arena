@@ -3,11 +3,11 @@
 // LAN corre en el servidor y aquí sólo se interpola y se dibuja.
 
 import {
-  ARENAS, CAPSULE_AT, CHAMPS, CHAMP_IDS, DIFF_NAMES, KEY_LABEL, ORB_AT, PAD_LABEL, SLOTS, STORM_AT, TEAM_NAMES,
+  ARENAS, CAPSULE_AT, LEVER_FIRST, LEVER_HOLD, layoutName, CHAMPS, CHAMP_IDS, DIFF_NAMES, KEY_LABEL, ORB_AT, PAD_LABEL, SLOTS, STORM_AT, TEAM_NAMES,
   type ChampId, type Difficulty, type Slot,
 } from "../shared/data";
 import { angleDiff } from "../shared/math";
-import { NO_INPUT, PR_STRIDE, ST, type Ev, type FSnap, type Input, type SeatInfo, type ServerMsg, type Snap } from "../shared/protocol";
+import { LV_STRIDE, NO_INPUT, PR_STRIDE, ST, type Ev, type FSnap, type Input, type SeatInfo, type ServerMsg, type Snap } from "../shared/protocol";
 import { DT, World, type FighterSpec } from "../shared/world";
 import { audioRunning, initAudio, playMusic, setVolume, sfx, suspendAudio } from "./audio";
 import { initInput, mousePos, readDevice, takePause, type Device } from "./input";
@@ -124,7 +124,9 @@ const CONTROLS = `
   <b>Reglas</b><br />
   Gana la ronda el equipo que deje al otro fuera de combate. A los ${CAPSULE_AT} s salen cápsulas de reparación,
   a los ${ORB_AT} s el Orbe Medalla (rómpelo para curar y cargar energía) y a los ${STORM_AT} s empieza la muerte súbita.
-  La energía se carga haciendo daño o curando y se conserva entre rondas.`;
+  La energía se carga haciendo daño o curando y se conserva entre rondas.<br />
+  Desde los ${LEVER_FIRST} s, las <b>palancas</b> de cada lado activan la trampa de la arena (géiseres, prensa, láseres, grúa, pulso):
+  quédate encima ${LEVER_HOLD} s o golpéala. La trampa avisa en el suelo y daña a todos por igual: actívala cuando el rival esté mal colocado.`;
 
 function renderOptions() {
   $<HTMLInputElement>("opt-name").value = save.name;
@@ -207,13 +209,15 @@ function renderLobby() {
   const size = lan ? room!.size : save.size;
   const wins = lan ? room!.wins : save.wins;
   const arena = lan ? room!.arena : save.arena;
+  const layout = lan ? room!.layout : save.layout;
   const host = !lan || room!.host === net?.id;
   $("lobby-title").innerHTML = lan ? `Sala <span class="code">${room!.code}</span>` : "Sala local";
   $("opt-size").textContent = `Modo: ${size}v${size}`;
   $("opt-wins").textContent = `Rondas para ganar: ${wins}`;
   $("opt-arena").textContent = `Arena: ${ARENAS[arena]!.name}`;
+  $("opt-layout").textContent = `Columnas: ${layoutName(arena, layout)}`;
   $("opt-diff").textContent = `Bots: ${DIFF_NAMES[lan ? (room!.seats.flat().find((s) => s.owner === 0) ?? room!.seats[0]![0]!).diff : save.diff]}`;
-  for (const id of ["opt-size", "opt-wins", "opt-arena", "opt-diff"]) $<HTMLButtonElement>(id).disabled = !host;
+  for (const id of ["opt-size", "opt-wins", "opt-arena", "opt-layout", "opt-diff"]) $<HTMLButtonElement>(id).disabled = !host;
 
   if (lan) {
     const r = room!;
@@ -459,7 +463,7 @@ function lobbyKey(e: KeyboardEvent) {
 
 function bindLobby() {
   $("opt-size").onclick = () => {
-    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size === 1 ? 2 : 1, wins: room!.wins, arena: room!.arena });
+    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size === 1 ? 2 : 1, wins: room!.wins, arena: room!.arena, layout: room!.layout });
     save.size = save.size === 1 ? 2 : 1;
     // al pasar a 1v1, quien estuviera en el segundo hueco sube al primero si está libre
     if (save.size === 1)
@@ -471,15 +475,25 @@ function bindLobby() {
   };
   $("opt-wins").onclick = () => {
     const next = (w: number) => (w >= 4 ? 1 : w + 1);
-    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size, wins: next(room!.wins), arena: room!.arena });
+    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size, wins: next(room!.wins), arena: room!.arena, layout: room!.layout });
     save.wins = next(save.wins);
     persist();
     sfx("select");
     renderLobby();
   };
   $("opt-arena").onclick = () => {
-    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size, wins: room!.wins, arena: (room!.arena + 1) % ARENAS.length });
+    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size, wins: room!.wins, arena: (room!.arena + 1) % ARENAS.length, layout: 0 });
     save.arena = (save.arena + 1) % ARENAS.length;
+    save.layout = 0;
+    persist();
+    sfx("select");
+    renderLobby();
+  };
+  // columnas: recorre las disposiciones de la arena y luego "al azar" (-1)
+  const nextLayout = (arena: number, l: number) => (l + 1 >= ARENAS[arena]!.layouts.length ? -1 : l + 1);
+  $("opt-layout").onclick = () => {
+    if (lobbyKind === "lan") return net?.send({ t: "mode", size: room!.size, wins: room!.wins, arena: room!.arena, layout: nextLayout(room!.arena, room!.layout) });
+    save.layout = nextLayout(save.arena, save.layout);
     persist();
     sfx("select");
     renderLobby();
@@ -533,7 +547,7 @@ function startLocal() {
       }
     }
   const seed = (Math.random() * 2 ** 31) | 0;
-  world = new World({ seed, wins: save.wins, arena: save.arena }, specs);
+  world = new World({ seed, wins: save.wins, arena: Math.min(save.arena, ARENAS.length - 1), layout: save.layout }, specs);
   // ?full: los humanos empiezan con la energía llena (para probar definitivas)
   if (new URLSearchParams(location.search).has("full")) for (const f of world.fighters) if (f.human) f.energy = 100;
   mode = "local";
@@ -757,6 +771,11 @@ function updateHud(s: Snap, dt: number) {
       txt = "¡MUERTE SÚBITA!";
       hot = true;
     }
+  }
+  // palanca lista (estado 0 en cualquiera)
+  for (let i = 2; i < s.lv.length; i += LV_STRIDE) if (s.lv[i] === 0) {
+    txt += " · Palanca lista";
+    break;
   }
   nx.textContent = txt;
   nx.classList.toggle("hot", hot);
@@ -985,10 +1004,15 @@ function init() {
     if (current === "lobby" && lobbyKind === "local" && !mode && !$("menus").classList.contains("hidden")) lobbyPads();
   };
   requestAnimationFrame(tick);
-  // ?play=merlix,coltron arranca directamente un 1v1 (pruebas)
-  const q = new URLSearchParams(location.search).get("play");
+  // ?play=merlix,coltron arranca directamente un 1v1 (pruebas); &arena=N&layout=N eligen el mapa
+  const params = new URLSearchParams(location.search);
+  const q = params.get("play");
+  // ?debug deja la partida en window.rb (para probar trampas desde la consola)
+  if (params.has("debug")) (window as unknown as { rb: unknown }).rb = { get world() { return world; } };
   show("title");
   if (q) {
+    if (params.has("arena")) save.arena = Math.max(0, Math.min(ARENAS.length - 1, Number(params.get("arena")) | 0));
+    if (params.has("layout")) save.layout = Number(params.get("layout")) | 0;
     const [a, b] = q.split(",") as ChampId[];
     lobby.teams[0]![0] = { dev: "kb", champ: CHAMPS[a!] ? a! : "beetlix", ready: true, diff: save.diff };
     if (b && CHAMPS[b]) lobby.teams[1]![0]!.champ = b;

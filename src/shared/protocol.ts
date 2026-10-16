@@ -59,7 +59,14 @@ export const ZN_STRIDE = 9;
 export const PROJ_KINDS = ["bullet", "snipe", "shellx", "fireball", "seed", "seedHeal", "pollen", "hook", "disable", "spark",
   "wave", "pellet", "ball", "bat", "zap", "shuriken", "kunai"] as const;
 export const ZONE_KINDS = ["firestorm", "trap", "firewall", "bloom", "garden", "meteor", "puff", "ray",
-  "lob", "turret", "dome", "smoke", "bloodmoon", "singularity", "whirl", "dance"] as const;
+  "lob", "turret", "dome", "smoke", "bloodmoon", "singularity", "whirl", "dance",
+  // trampas de las palancas (equipo -1: dañan a todos) y columnas que suben
+  "geyser", "press", "laser", "magnet", "pulse", "rise"] as const;
+/** Objeto con vida: [id, tipo, x, y, r, ángulo*100, vida 0..100, equipo, largo] */
+export const PP_STRIDE = 9;
+export const PROP_KINDS = ["crate"] as const;
+/** Palanca: [x, y, estado (0 lista, 1 recargando, 2 bloqueada), progreso 0..100] */
+export const LV_STRIDE = 4;
 
 /**
  * Eventos (efectos y sonidos) del último paso:
@@ -84,6 +91,12 @@ export interface Snap {
   f: FSnap[];
   pr: number[];
   zn: number[];
+  /** columnas: [x, y, r]... */
+  pl: number[];
+  /** objetos con vida (PP_STRIDE) */
+  pp: number[];
+  /** palancas (LV_STRIDE) */
+  lv: number[];
   orb: [number, number, number] | null;
   caps: number[];
   /** tamaño de la arena por la muerte súbita (1 = entera) */
@@ -111,13 +124,13 @@ export type ClientMsg =
   | { t: "champ"; champ: ChampId }
   | { t: "ready"; v: boolean }
   | { t: "bot"; team: number; slot: number; diff?: Difficulty; champ?: ChampId }
-  | { t: "mode"; size: 1 | 2; wins: number; arena: number }
+  | { t: "mode"; size: 1 | 2; wins: number; arena: number; layout: number }
   | { t: "start" }
   | { t: "in"; i: Input };
 
 export type ServerMsg =
   | { t: "welcome"; id: number }
-  | { t: "room"; code: string; host: number; seats: SeatInfo[][]; size: 1 | 2; wins: number; arena: number; inGame: boolean }
+  | { t: "room"; code: string; host: number; seats: SeatInfo[][]; size: 1 | 2; wins: number; arena: number; layout: number; inGame: boolean }
   | { t: "start"; you: number }
   | { t: "snap"; s: Snap }
   | { t: "end" }

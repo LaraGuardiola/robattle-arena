@@ -18,6 +18,7 @@ const shot = (dmg: number, extra?: (w: World, t: Fighter, p: Proj) => void) => (
 function blast(w: World, f: Fighter, x: number, y: number, r: number, dmg: number | ((e: Fighter) => number), extra?: (e: Fighter) => void) {
   for (const e of w.enemiesIn(f.team, x, y, r)) if (w.damage(f, e, typeof dmg === "number" ? dmg : dmg(e), { from: [x, y] })) extra?.(e);
   if (w.orb && dist2(w.orb.x, w.orb.y, x, y) < (r + 9) ** 2) w.hitOrb(f, typeof dmg === "number" ? dmg : 15);
+  w.blastProps(x, y, r, typeof dmg === "number" ? dmg : 15, f);
 }
 
 const angle = (a: Aim) => Math.atan2(a.dy, a.dx);
