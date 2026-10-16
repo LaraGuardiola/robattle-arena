@@ -107,7 +107,7 @@ export type ClientMsg =
   | { t: "seat"; team: number; slot: number }
   | { t: "champ"; champ: ChampId }
   | { t: "ready"; v: boolean }
-  | { t: "bot"; team: number; slot: number; diff: Difficulty | -1 }
+  | { t: "bot"; team: number; slot: number; diff?: Difficulty; champ?: ChampId }
   | { t: "mode"; size: 1 | 2; wins: number; arena: number }
   | { t: "start" }
   | { t: "in"; i: Input };

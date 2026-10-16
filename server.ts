@@ -198,7 +198,7 @@ function onMessage(c: Client, m: ClientMsg) {
           const src = r.seats[cur.t]![cur.s]!;
           Object.assign(dst, { owner: c.id, name: c.name, champ: src.champ, ready: false });
           Object.assign(src, { owner: 0, name: "", ready: false, champ: randChamp() });
-        } else if (dst.owner === 0 && host) dst.champ = CHAMP_IDS[(CHAMP_IDS.indexOf(dst.champ) + 1) % CHAMP_IDS.length]!;
+        }
         publish(r, roomState(r));
       }
       break;
@@ -222,6 +222,7 @@ function onMessage(c: Client, m: ClientMsg) {
       if (r && host && !r.world) {
         const seat = r.seats[m.team === 1 ? 1 : 0]![m.slot === 1 ? 1 : 0]!;
         if (m.diff === 0 || m.diff === 1 || m.diff === 2) seat.diff = m.diff;
+        if (seat.owner === 0 && typeof m.champ === "string" && m.champ in CHAMPS) seat.champ = m.champ as ChampId;
         publish(r, roomState(r));
       }
       break;

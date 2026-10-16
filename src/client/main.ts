@@ -21,12 +21,12 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // ================================================================ estado
-interface LocalSeat { dev: string | null; champ: ChampId; ready: boolean }
+interface LocalSeat { dev: string | null; champ: ChampId; ready: boolean; diff: Difficulty }
 interface LocalPlayer { id: number; dev: Device; devKey: string; tag: string; hp: number; ax: number; ay: number }
 
 const randChamp = () => CHAMP_IDS[Math.floor(Math.random() * CHAMP_IDS.length)]!;
 const lobby = {
-  teams: [0, 1].map(() => [0, 1].map((): LocalSeat => ({ dev: null, champ: randChamp(), ready: false }))),
+  teams: [0, 1].map(() => [0, 1].map((): LocalSeat => ({ dev: null, champ: randChamp(), ready: false, diff: save.diff }))),
 };
 let lobbyKind: "local" | "lan" = "local";
 /** campeón que se muestra en la ficha de la sala */
@@ -172,12 +172,34 @@ function humanTags() {
   return tags;
 }
 
-function seatHTML(team: number, slot: number, s: { champ: ChampId; who: string; human: boolean; ready: boolean; me: boolean }) {
+interface SeatView {
+  champ: ChampId;
+  who: string;
+  human: boolean;
+  ready: boolean;
+  me: boolean;
+  diff: Difficulty;
+  /** se pueden cambiar campeón y dificultad del bot */
+  edit: boolean;
+  /** botón para sentarse en este hueco */
+  sit: boolean;
+}
+
+function seatHTML(team: number, slot: number, s: SeatView) {
   const c = CHAMPS[s.champ];
   const st = s.human ? (s.ready ? `<span class="st ok">¡LISTO!</span>` : `<span class="st">eligiendo…</span>`) : `<span class="st">CPU</span>`;
-  return `<button class="seat ${s.human ? "human" : "empty"} ${s.me ? "me" : ""}" data-team="${team}" data-slot="${slot}">
+  let ctl = "";
+  if (!s.human && (s.edit || s.sit)) {
+    ctl = `<div class="seat-ctl">`;
+    if (s.edit)
+      ctl += `<button class="mini" data-act="prev" title="Campeón anterior">◀</button><button class="mini" data-act="next" title="Campeón siguiente">▶</button>` +
+        `<button class="mini" data-act="rand" title="Campeón al azar">🎲</button><button class="mini diff d${s.diff}" data-act="diff" title="Dificultad">${DIFF_NAMES[s.diff]}</button>`;
+    if (s.sit) ctl += `<button class="mini sit" data-act="sit">Sentarme aquí</button>`;
+    ctl += `</div>`;
+  }
+  return `<div class="seat ${s.human ? "human" : "empty"} ${s.me ? "me" : ""}" data-team="${team}" data-slot="${slot}">
     <img src="${robotURL(s.champ, 4, team === 1)}" alt="">
-    <div><div class="nm">${c.name}</div><div class="role">${c.role}</div><div class="who">${esc(s.who)}</div></div>${st}</button>`;
+    <div><div class="nm">${c.name}</div><div class="role">${c.role}</div><div class="who">${esc(s.who)}</div></div>${st}${ctl}</div>`;
 }
 
 function renderLobby() {
@@ -190,15 +212,18 @@ function renderLobby() {
   $("opt-size").textContent = `Modo: ${size}v${size}`;
   $("opt-wins").textContent = `Rondas para ganar: ${wins}`;
   $("opt-arena").textContent = `Arena: ${ARENAS[arena]!.name}`;
-  $("opt-diff").textContent = `Bots: ${DIFF_NAMES[lan ? room!.seats[0]![0]!.diff : save.diff]}`;
+  $("opt-diff").textContent = `Bots: ${DIFF_NAMES[lan ? (room!.seats.flat().find((s) => s.owner === 0) ?? room!.seats[0]![0]!).diff : save.diff]}`;
   for (const id of ["opt-size", "opt-wins", "opt-arena", "opt-diff"]) $<HTMLButtonElement>(id).disabled = !host;
 
   if (lan) {
     const r = room!;
-    $("lobby-hint").innerHTML = `Comparte el código <b class="code">${r.code}</b>. Pulsa en un hueco para cambiarte de sitio. Los huecos libres los ocupan bots.${host ? "" : " El anfitrión elige el modo y empieza."}`;
+    $("lobby-hint").innerHTML = `Comparte el código <b class="code">${r.code}</b>. Los huecos libres los ocupan bots${host ? ": elige su campeón y dificultad con sus botones" : "; el anfitrión elige su campeón, el modo y empieza"}.`;
     for (const t of [0, 1])
       $(`slots${t}`).innerHTML = r.seats[t]!.slice(0, size).map((s: SeatInfo, i) =>
-        seatHTML(t, i, { champ: s.champ, who: s.owner > 0 ? s.name : "Bot", human: s.owner > 0, ready: s.ready, me: s.owner === net?.id })).join("");
+        seatHTML(t, i, {
+          champ: s.champ, who: s.owner > 0 ? s.name : `Bot · ${DIFF_NAMES[s.diff]}`, human: s.owner > 0, ready: s.ready, me: s.owner === net?.id,
+          diff: s.diff, edit: host, sit: s.owner === 0,
+        })).join("");
     const mine = r.seats.flat().find((s) => s.owner === net?.id);
     $("lobby-kb").classList.add("hidden");
     $("lobby-ready").classList.remove("hidden");
@@ -210,7 +235,10 @@ function renderLobby() {
     $("lobby-hint").innerHTML = `Pulsa <b>A / ✕</b> en un mando o <b>Intro</b> en el teclado para unirte · <b>←→</b> campeón · <b>↑↓</b> equipo · <b>A / Intro</b> listo · <b>Start</b> empezar. Los huecos vacíos son bots.`;
     for (const t of [0, 1])
       $(`slots${t}`).innerHTML = lobby.teams[t]!.slice(0, size).map((s, i) =>
-        seatHTML(t, i, { champ: s.champ, who: s.dev ? `${tags.get(s.dev)} · ${devName(s.dev)}` : "Bot (pulsa para cambiar)", human: !!s.dev, ready: s.ready, me: s.dev === "kb" })).join("");
+        seatHTML(t, i, {
+          champ: s.champ, who: s.dev ? `${tags.get(s.dev)} · ${devName(s.dev)}` : `Bot · ${DIFF_NAMES[s.diff]}`, human: !!s.dev, ready: s.ready, me: s.dev === "kb",
+          diff: s.diff, edit: true, sit: !s.dev && !findSeat("kb"),
+        })).join("");
     const kb = findSeat("kb");
     $("lobby-kb").classList.remove("hidden");
     $("lobby-kb").textContent = kb ? "Salir (teclado)" : "Unirse con teclado";
@@ -224,7 +252,15 @@ function renderLobby() {
     : "";
   $("lobby-detail").innerHTML = picker + champHTML(detailChamp, !lan && !findSeat("kb") && padsRaw().length > 0);
   for (const b of $("lobby-detail").querySelectorAll<HTMLElement>("[data-pick]")) b.onclick = () => pickChamp(b.dataset.pick as ChampId);
-  for (const b of document.querySelectorAll<HTMLElement>("#teams .seat")) b.onclick = () => clickSeat(+b.dataset.team!, +b.dataset.slot!);
+  for (const b of document.querySelectorAll<HTMLElement>("#teams .seat")) {
+    const team = +b.dataset.team!, slot = +b.dataset.slot!;
+    b.onclick = () => clickSeat(team, slot);
+    for (const btn of b.querySelectorAll<HTMLElement>("[data-act]"))
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        seatAction(team, slot, btn.dataset.act!);
+      };
+  }
 }
 
 function findSeat(dev: string) {
@@ -248,27 +284,39 @@ function pickChamp(c: ChampId) {
   }
 }
 
+/** Pulsar un hueco enseña la ficha de su campeón. */
 function clickSeat(team: number, slot: number) {
-  if (lobbyKind === "lan") {
-    const s = room!.seats[team]![slot]!;
-    if (s.owner === 0) {
-      // hueco libre: los demás se cambian ahí; el anfitrión puede cambiar el campeón del bot si ya está en él
-      net?.send({ t: "seat", team, slot });
-    }
-    return;
-  }
-  const s = lobby.teams[team]![slot]!;
-  if (s.dev === "kb" || !s.dev) {
-    if (!s.dev && !findSeat("kb")) {
-      joinLocal("kb", team, slot);
-      return;
-    }
-    const i = CHAMP_IDS.indexOf(s.champ);
-    s.champ = CHAMP_IDS[(i + 1) % CHAMP_IDS.length]!;
-    detailChamp = s.champ;
-    sfx("select");
+  const champ = lobbyKind === "lan" ? room!.seats[team]![slot]!.champ : lobby.teams[team]![slot]!.champ;
+  if (champ !== detailChamp) {
+    detailChamp = champ;
+    sfx("click");
     renderLobby();
   }
+}
+
+/** Botones de un hueco de bot: campeón, dificultad o sentarse en él. */
+function seatAction(team: number, slot: number, act: string) {
+  const cur = lobbyKind === "lan" ? room!.seats[team]![slot]! : lobby.teams[team]![slot]!;
+  const step = (d: number) => CHAMP_IDS[(CHAMP_IDS.indexOf(cur.champ) + d + CHAMP_IDS.length) % CHAMP_IDS.length]!;
+  let champ: ChampId | null = null, diff: Difficulty | null = null;
+  if (act === "prev") champ = step(-1);
+  else if (act === "next") champ = step(1);
+  else if (act === "rand") {
+    const others = CHAMP_IDS.filter((c) => c !== cur.champ);
+    champ = others[Math.floor(Math.random() * others.length)]!;
+  } else if (act === "diff") diff = ((cur.diff + 1) % 3) as Difficulty;
+  sfx("select");
+  if (lobbyKind === "lan") {
+    if (act === "sit") net?.send({ t: "seat", team, slot });
+    else net?.send({ t: "bot", team, slot, ...(champ ? { champ } : {}), ...(diff !== null ? { diff } : {}) });
+    if (champ) detailChamp = champ;
+    return;
+  }
+  const s = cur as LocalSeat;
+  if (act === "sit") return joinLocal("kb", team, slot);
+  if (champ) s.champ = detailChamp = champ;
+  if (diff !== null) s.diff = diff;
+  renderLobby();
 }
 
 function joinLocal(dev: string, team = -1, slot = -1) {
@@ -438,11 +486,12 @@ function bindLobby() {
   };
   $("opt-diff").onclick = () => {
     if (lobbyKind === "lan") {
-      const d = ((room!.seats[0]![0]!.diff + 1) % 3) as Difficulty;
+      const d = (((room!.seats.flat().find((s) => s.owner === 0) ?? room!.seats[0]![0]!).diff + 1) % 3) as Difficulty;
       for (const t of [0, 1]) for (const s of [0, 1]) net?.send({ t: "bot", team: t, slot: s, diff: d });
       return;
     }
     save.diff = ((save.diff + 1) % 3) as Difficulty;
+    for (const t of lobby.teams) for (const st of t) st.diff = save.diff;
     persist();
     sfx("select");
     renderLobby();
@@ -477,7 +526,7 @@ function startLocal() {
       const id = t * 2 + s + 1;
       const tag = seat.dev ? tags.get(seat.dev)! : "";
       const name = seat.dev ? (seat.dev === "kb" && save.name ? save.name : tag) : `CPU ${CHAMPS[seat.champ].name}`;
-      specs.push({ id, name, champ: seat.champ, team: t, human: !!seat.dev, diff: save.diff });
+      specs.push({ id, name, champ: seat.champ, team: t, human: !!seat.dev, diff: seat.diff });
       if (seat.dev) {
         const dev: Device = seat.dev === "kb" ? { kind: "kb" } : { kind: "pad", index: +seat.dev.slice(3) };
         locals.push({ id, dev, devKey: seat.dev, tag: locals.length || tags.size > 1 ? tag : "", hp: 0, ax: t ? -1 : 1, ay: 0 });
@@ -941,7 +990,7 @@ function init() {
   show("title");
   if (q) {
     const [a, b] = q.split(",") as ChampId[];
-    lobby.teams[0]![0] = { dev: "kb", champ: CHAMPS[a!] ? a! : "beetlix", ready: true };
+    lobby.teams[0]![0] = { dev: "kb", champ: CHAMPS[a!] ? a! : "beetlix", ready: true, diff: save.diff };
     if (b && CHAMPS[b]) lobby.teams[1]![0]!.champ = b;
     startLocal();
   }
