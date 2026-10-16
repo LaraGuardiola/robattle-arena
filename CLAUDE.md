@@ -1,5 +1,8 @@
 # Robattle Arena — notas para trabajar en el proyecto
 
+> Próximos upgrades diseñados (10 campeones nuevos, layouts de columnas,
+> palancas con trampas): ver `docs/ROADMAP.md`.
+
 - Stack fijo: **Bun + HTML + CSS + TypeScript**. Sin frameworks ni dependencias de
   runtime. Bun empaqueta el cliente desde `src/client/index.html` (HTML import en
   `server.ts`). Estética y motor visual heredados de Robattle Survivors (`../Robattle`).
