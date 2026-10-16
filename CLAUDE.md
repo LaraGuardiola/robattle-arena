@@ -10,6 +10,11 @@
   `src/shared/skills.ts`; si cambias un número, cambia también el texto `desc`.
 - Slots: `r2` básico (mantener), `l2` secundaria, `a` movilidad, `x`/`y` skills,
   `b` definitiva (cuesta 100 de energía). Teclado: clic izq/der, ESPACIO, Q, E, R.
+- Mecánicas genéricas del motor (world.ts) que usan varias skills: estados
+  (aturdir, inmovilizar, silenciar, dormir, miedo, guardia espejo, niebla,
+  torbellino...), `knock` con choque contra muros (`slam`), zonas que siguen a
+  un robot (`follow`), cúpulas que frenan proyectiles (`dome`) y canalizaciones
+  (`CHANNELS` en skills.ts, se ejecutan cada paso del lanzamiento).
 - La IA de los bots (`src/shared/ai.ts`) usa la pista `SkillDef.ai` de cada skill.
   Tras tocar equilibrio, pasar `bun run sim` (partidas bot contra bot con
   porcentajes de victoria 1v1 y 2v2 y recuento de skills usadas).

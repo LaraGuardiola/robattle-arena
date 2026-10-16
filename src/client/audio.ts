@@ -214,6 +214,35 @@ const SFX: Record<string, () => void> = {
   crit: () => tone("square", 1500, 2200, 0.08, 0.12),
   hook: () => tone("sawtooth", 300, 120, 0.15, 0.12),
   stealth: () => tone("sine", 1200, 200, 0.4, 0.1),
+  crescent: () => {
+    tone("sine", 600, 1800, 0.18, 0.12);
+    noise(0.2, 0.15, 7000, 0, sfxBus, 4);
+  },
+  minigun: () => {
+    tone("square", 300, 150, 0.04, 0.06);
+    noise(0.04, 0.12, 4000);
+  },
+  treads: () => {
+    tone("sawtooth", 70, 110, 0.4, 0.15);
+    noise(0.4, 0.15, 900);
+  },
+  armor: () => [330, 440, 660].forEach((f, i) => tone("square", f, f, 0.08, 0.1, i * 0.05)),
+  bat: () => tone("triangle", 1800, 900, 0.08, 0.06),
+  hypno: () => [0, 0.1, 0.2].forEach((at, i) => tone("sine", 500 + i * 150, 300 + i * 150, 0.2, 0.1, at)),
+  bloodmoon: () => {
+    tone("sawtooth", 110, 55, 1, 0.18);
+    [220, 262, 311].forEach((f, i) => tone("triangle", f, f, 0.6, 0.08, 0.2 + i * 0.12));
+  },
+  dome: () => tone("sine", 300, 1500, 0.35, 0.14),
+  chain: () => {
+    tone("sawtooth", 2400, 300, 0.15, 0.1);
+    noise(0.15, 0.2, 9000);
+  },
+  singularity: () => {
+    tone("sine", 900, 40, 1.2, 0.25);
+    noise(1, 0.15, 600);
+  },
+  smoke: () => noise(0.5, 0.25, 1200, 0, sfxBus, 1),
   frenzy: () => {
     noise(0.3, 0.25, 6000, 0, sfxBus, 3);
     tone("sawtooth", 600, 1500, 0.25, 0.1);

@@ -158,6 +158,15 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
     || enemies.some((e) => e.cast && dist2(e.x, e.y, f.x, f.y) < 60 * 60);
   const predict = (time: number) => [t.x + t.vx * time, t.y + t.vy * time] as const;
 
+  // soporte: la semilla también cura, así que se dispara al aliado herido
+  if (f.def.skills.r2.id === "seed" && lowAlly !== f && lowK < 0.75 && w.canUse(f, "r2")
+    && dist2(lowAlly.x, lowAlly.y, f.x, f.y) < f.def.skills.r2.range ** 2 * 0.8 && w.clearLine(f.x, f.y, lowAlly.x, lowAlly.y) && R.next() < 0.6) {
+    b.wantB = SLOT_BIT.r2;
+    b.ax = lowAlly.x + lowAlly.vx * 0.3;
+    b.ay = lowAlly.y + lowAlly.vy * 0.3;
+    if (lowK < 0.6 && w.canUse(f, "l2")) b.wantB = SLOT_BIT.l2;
+    return;
+  }
   const order: Slot[] = ["b", "a", "x", "y", "l2", "r2"];
   for (const slot of order) {
     if (!w.canUse(f, slot)) continue;

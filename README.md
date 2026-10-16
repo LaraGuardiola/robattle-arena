@@ -21,7 +21,8 @@ bun run build      # ejecutable en dist/robattle-arena
   cooperativo contra bots.
 - **Multijugador LAN**: el servidor muestra las IPs de tu red; los demás abren
   esa dirección, entran con el código de 4 letras de la sala y eligen hueco y
-  campeón. Los huecos libres son bots.
+  campeón. Los huecos libres son bots: el anfitrión elige su campeón (◀ ▶ o 🎲)
+  y su dificultad desde el propio hueco.
 
 ## Controles
 
@@ -61,6 +62,11 @@ tocas el stick derecho, se apunta hacia donde caminas.
 | **Merlix** | Mago | Bola de fuego, tormenta ígnea telegrafiada, teletransporte, muro de fuego que frena balas, puño fundido y *Rayo infernal*. |
 | **Florak** | Soporte | Semilla que daña o cura, flor sanadora, rodar, burbuja de savia (escudo), polen somnífero y *Jardín ancestral*. |
 | **Nekobot** | Asesina | Zarpazos rápidos, garfio que atrae, salto felino, sigilo, contraataque *Siete vidas* y *Frenesí*. |
+| **Sawkuwa** | Espadachín | Tajo doble, corte lunar que atraviesa, paso fantasma, *Guardia espejo* que devuelve los proyectiles, pinza que lanza al enemigo a tu espalda y *Mil cortes* (torbellino). |
+| **Tanker** | Artillero | Ametralladora, obús en parábola, orugas que arrollan, blindaje, bala de cañón que aturde si empotra contra un muro y *Bombardeo*. |
+| **Vladbot** | Vampiro | Murciélagos que roban vida, *Drenar* canalizado, forma de niebla, enjambre, mirada que asusta y *Luna de sangre*. |
+| **Nexus** | Tecnomante | Descarga, torreta automática, propulsores, cúpula que frena las balas enemigas, rayo en cadena y *Singularidad* que atrae. |
+| **Shinobot** | Ninja | Shurikens, abanico de kunais, sustitución con tronco, kunai que te lleva a la espalda del enemigo, bomba de humo que vuelve invisibles a los aliados y *Danza de las sombras*. |
 
 La ficha completa de cada skill (daño, recarga, tiempo de lanzamiento) está en
 el menú **Campeones** y en la sala.

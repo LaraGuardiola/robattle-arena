@@ -17,6 +17,7 @@ export const NO_INPUT: Input = { mx: 0, my: 0, ax: 1, ay: 0, b: 0 };
 export const ST = {
   stun: 1, root: 2, slow: 4, silence: 8, shield: 16, air: 32, stealth: 64, sleep: 128,
   counter: 256, block: 512, haste: 1024, dead: 2048, invuln: 4096, hot: 8192,
+  fear: 16384, deflect: 32768, mist: 65536, spin: 131072,
 } as const;
 
 export interface FSnap {
@@ -55,8 +56,10 @@ export const PR_STRIDE = 6;
 /** Zona: [id, tipo, x, y, r, ángulo*100, progreso 0..100, equipo, largo] */
 export const ZN_STRIDE = 9;
 
-export const PROJ_KINDS = ["bullet", "snipe", "shellx", "fireball", "seed", "seedHeal", "pollen", "hook", "disable", "spark"] as const;
-export const ZONE_KINDS = ["firestorm", "trap", "firewall", "bloom", "garden", "meteor", "puff", "ray"] as const;
+export const PROJ_KINDS = ["bullet", "snipe", "shellx", "fireball", "seed", "seedHeal", "pollen", "hook", "disable", "spark",
+  "wave", "pellet", "ball", "bat", "zap", "shuriken", "kunai"] as const;
+export const ZONE_KINDS = ["firestorm", "trap", "firewall", "bloom", "garden", "meteor", "puff", "ray",
+  "lob", "turret", "dome", "smoke", "bloodmoon", "singularity", "whirl", "dance"] as const;
 
 /**
  * Eventos (efectos y sonidos) del último paso:

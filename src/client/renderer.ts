@@ -120,6 +120,14 @@ export class Renderer {
       case "snap": push(0.25); this.burst(x, y, 8, "#c9cfdc", 60); break;
       case "puff": this.burst(x, y, 6, b === 1 ? "#e6a0ff" : "#9aa0b0", 40); break;
       case "shake": this.kick(a); break;
+      case "slash2": push(0.16); break;
+      case "afterimage": push(0.3); this.sparkle(x, y, b === 1 ? "#3fd7ff" : b === 2 ? "#ff3b4e" : "#8a7bff", 6); break;
+      case "deflect": push(0.25); this.burst(x, y, 8, "#7fe3ff", 80); break;
+      case "mist": this.burst(x, y - 6, 16, "#c9cfdc", 50, 2); this.burst(x, y - 6, 6, "#c02a4a", 40); break;
+      case "hypno": push(0.45); break;
+      case "drain": push(0.22); break;
+      case "bolt": push(0.2); this.burst(a, b, 5, "#bff6ff", 60); break;
+      case "log": push(0.7); this.burst(x, y - 4, 10, "#dfe4ee", 50, 2); break;
     }
   }
 
@@ -242,6 +250,13 @@ export class Renderer {
     list.sort((a, b) => a.y - b.y);
     for (const d of list) d.f();
 
+    // ---- el humo tapa a los robots
+    for (let i = 0; i < s.zn.length; i += ZN_STRIDE)
+      if (ZONE_KINDS[s.zn[i + 1]!] === "smoke") {
+        const raw = s.zn[i + 6]!;
+        this.drawSmoke(s.zn[i + 2]!, s.zn[i + 3]!, s.zn[i + 4]!, (raw >= 1000 ? raw - 1000 : raw) / 100, X, Y, now, 0.35);
+      }
+
     // ---- proyectiles
     for (let i = 0; i < s.pr.length; i += PR_STRIDE) this.drawProj(s.pr, i, X, Y, now);
 
@@ -357,7 +372,8 @@ export class Renderer {
       return;
     }
     const face = f.face / 100;
-    const left = Math.cos(face) < 0;
+    const spinning = !!(f.st & ST.spin);
+    const left = spinning ? Math.floor(now * 22) % 2 === 0 : Math.cos(face) < 0;
     const stunned = f.st & (ST.stun | ST.sleep);
     const pose = f.mv && !stunned ? 1 + (Math.floor(now * 8 + f.id) % 2) : 0;
     const px = X(f.x), py = Y(f.y);
@@ -366,6 +382,16 @@ export class Renderer {
     let spr = f.fl ? robotSprite(f.champ, pose, left, true) : robotSprite(f.champ, pose, left);
     if (f.st & ST.invuln && Math.floor(now * 16) % 2) spr = robotTint(f.champ, pose, left, "#fff6c8");
     if (stealth) ctx.globalAlpha = 0.35;
+    if (f.st & ST.mist) {
+      // niebla: nube rojiza en lugar del robot
+      for (let k = 0; k < 6; k++) {
+        const an = now * 3 + (k * TAU) / 6;
+        this.disc(px + Math.round(Math.cos(an) * 5), py - 7 + Math.round(Math.sin(an) * 3), 5, k % 2 ? "#9aa0b0" : "#c9cfdc", 0.5);
+      }
+      this.disc(px, py - 7, 4, "#c02a4a", 0.5);
+      if (Math.random() < 0.4) this.parts.push({ x: f.x + (Math.random() - 0.5) * 10, y: f.y, z: 4 + Math.random() * 8, vx: 0, vy: 0, vz: 4, life: 0.4, max: 0.4, c: "#c9cfdc", s: 2, g: 0 });
+      return;
+    }
     // al lanzar, pequeño temblor de carga
     const jit = f.cs >= 0 && f.cp > 30 && CHAMPS[f.champ].skills[SLOTS[f.cs]!].cast >= 0.3 ? Math.round(Math.sin(now * 60)) : 0;
     ctx.drawImage(spr, px - (spr.width >> 1) + jit, py - spr.height + 1 - lift);
@@ -379,6 +405,25 @@ export class Renderer {
       ctx.beginPath();
       ctx.ellipse(px, py - 8 - lift, 11, 12, 0, 0, TAU);
       ctx.stroke();
+    }
+    if (f.st & ST.deflect) {
+      // guardia espejo: arco cian que brilla
+      for (const [col, rr, w] of [["#3fd7ff", 12, 2], ["#e6fbff", 13, 1]] as const) {
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.7 + Math.sin(now * 30) * 0.3;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.arc(px, py - 7, rr, face - 1.2, face + 1.2);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (f.st & ST.fear) {
+      const k = Math.floor(now * 6) % 2;
+      this.label(px + (k ? 1 : -1), top - 4, "!", "#b06aff");
+      ctx.fillStyle = "#e6d0ff";
+      ctx.fillRect(px - 6, top + 2 + k, 1, 1);
+      ctx.fillRect(px + 6, top + 3 - k, 1, 1);
     }
     if (f.st & ST.block) {
       ctx.strokeStyle = "#ffd23f";
@@ -495,8 +540,30 @@ export class Renderer {
     ctx.globalAlpha = 0.35;
     ctx.fillRect(X(x) - 2, Y(y) - 1, 4, 2);
     ctx.globalAlpha = 1;
-    const spr = projSprite(kind === "bullet" ? "bullet" : kind);
-    const rot = kind === "snipe" || kind === "hook" || kind === "shellx" || kind === "fireball";
+    if (kind === "zap") {
+      // rayo: trazo cian con núcleo blanco
+      const x0 = X(x), y0 = Y(y) - lift, x1 = X(x - Math.cos(a) * 9), y1 = Y(y - Math.sin(a) * 9) - lift;
+      for (const [col, w] of [["#3fd7ff", 3], ["#ffffff", 1]] as const) {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = w;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+      }
+      return;
+    }
+    const spr = projSprite(kind === "bat" ? (Math.floor(now * 12 + x) % 2 ? "bat" : "batUp") : kind);
+    if (kind === "ball") this.shadow(X(x), Y(y), 3);
+    if (kind === "shuriken") {
+      ctx.save();
+      ctx.translate(X(x), Y(y) - lift);
+      ctx.rotate(now * 22);
+      ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
+      ctx.restore();
+      return;
+    }
+    const rot = kind === "snipe" || kind === "hook" || kind === "shellx" || kind === "fireball" || kind === "kunai" || kind === "wave";
     if (rot) {
       ctx.save();
       ctx.translate(X(x), Y(y) - lift);
@@ -527,7 +594,11 @@ export class Renderer {
       ctx.setLineDash([]);
     } else if (kind === "seed") trail("#9fffb0", 0.4);
     else if (kind === "pollen") trail("#e6a0ff", 0.6);
-    else if (kind === "shellx") trail("#c9cfdc", 0.8);
+    else if (kind === "shellx" || kind === "ball") trail("#c9cfdc", 0.8);
+    else if (kind === "wave") {
+      trail("#7fe3ff", 0.9);
+      trail("#e6fbff", 0.5);
+    } else if (kind === "bat") trail("#5a2a6a", 0.3);
   }
 
   // ------------------------------------------------------------ zonas
@@ -633,6 +704,151 @@ export class Renderer {
         case "puff":
           this.disc(px, py - 4, r * (0.6 + prog * 0.4), "#ff8a2b", 0.45 * (1 - prog));
           break;
+        case "lob": {
+          if (armed) break;
+          this.disc(px, py, r, "#ff8a2b", 0.1 + prog * 0.15);
+          this.disc(px, py, r * prog, "#ff3b4e", 0.25);
+          ctx.strokeStyle = Math.floor(now * (prog > 0.7 ? 16 : 8)) % 2 ? "#ffd23f" : "#ff8a2b";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+          ctx.stroke();
+          // el obús cayendo
+          const h = Math.round((1 - prog) * 110);
+          this.shadow(px, py, 2 + prog * 3);
+          ctx.drawImage(projSprite("shell"), px - 3, py - 4 - h);
+          if (Math.random() < 0.5) this.parts.push({ x, y: y + 1, z: h + 6, vx: 0, vy: 0, vz: 0, life: 0.2, max: 0.2, c: "#c9cfdc", s: 1, g: 0 });
+          break;
+        }
+        case "turret": {
+          if (ally) {
+            ctx.globalAlpha = 0.18;
+            ctx.strokeStyle = TEAM_COLORS[team]!;
+            ctx.setLineDash([2, 4]);
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.globalAlpha = 1;
+          }
+          const lift = armed ? 0 : Math.round((1 - prog) * 30);
+          this.shadow(px, py, 5);
+          ctx.fillStyle = "#17121f";
+          ctx.fillRect(px - 5, py - 5 - lift, 11, 6);
+          ctx.fillStyle = "#6b7287";
+          ctx.fillRect(px - 4, py - 4 - lift, 9, 4);
+          // cabeza giratoria con cañón hacia su objetivo
+          const hx = px, hy = py - 9 - lift;
+          ctx.strokeStyle = "#17121f";
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.moveTo(hx, hy);
+          ctx.lineTo(hx + Math.cos(a) * 7, hy + Math.sin(a) * 5);
+          ctx.stroke();
+          ctx.strokeStyle = "#c9cfdc";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+          this.disc(hx, hy, 4, "#17121f", 1);
+          this.disc(hx, hy, 3, "#c9cfdc", 1);
+          ctx.fillStyle = Math.floor(now * 4) % 2 ? "#3fd7ff" : TEAM_COLORS[team]!;
+          ctx.fillRect(hx - 1, hy - 1, 2, 2);
+          if (armed && prog > 0.85 && Math.floor(now * 10) % 2) {
+            ctx.fillStyle = "#ff3b4e";
+            ctx.fillRect(hx - 1, hy - 5, 2, 2);
+          }
+          break;
+        }
+        case "dome": {
+          const fade = Math.min(1, (1 - prog) * 5) * (armed ? 1 : prog);
+          const R = r + Math.sin(now * 6) * 0.7;
+          this.disc(px, py - 4, R, "#3fd7ff", 0.13 * fade);
+          ctx.globalAlpha = 0.8 * fade;
+          ctx.strokeStyle = "#bff6ff";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(px, py - 4, R, R * 0.8, 0, 0, TAU);
+          ctx.stroke();
+          // celdas hexagonales que parpadean
+          for (let k = 0; k < 18; k++) {
+            const an = (k / 18) * TAU, rr = R * (0.45 + (k % 3) * 0.2);
+            if ((k + Math.floor(now * 8)) % 4) continue;
+            ctx.fillStyle = "#e6fbff";
+            ctx.fillRect(px + Math.round(Math.cos(an) * rr), py - 4 + Math.round(Math.sin(an) * rr * 0.8), 2, 1);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "smoke":
+          this.drawSmoke(x, y, r, prog, X, Y, now, 0.45);
+          break;
+        case "bloodmoon": {
+          const fade = armed ? Math.min(1, (1 - prog) * 6) : prog;
+          this.disc(px, py, r, "#5a0a20", 0.35 * fade);
+          this.disc(px, py, r * (0.75 + Math.sin(now * 4) * 0.05), "#c02a4a", 0.18 * fade);
+          ctx.globalAlpha = fade;
+          for (let k = 0; k < 30; k++) {
+            const an = (k / 30) * TAU - now * 0.5;
+            ctx.fillStyle = k % 3 ? "#c02a4a" : "#ff3b4e";
+            ctx.fillRect(X(x + Math.cos(an) * r), Y(y + Math.sin(an) * r * 0.8), 2, 2);
+          }
+          // la luna sobre la zona
+          const my = py - 52 + Math.round(Math.sin(now * 2) * 2);
+          this.disc(px, my, 9, "#17121f", fade);
+          this.disc(px, my, 8, "#c02a4a", fade);
+          this.disc(px - 2, my - 2, 4, "#ff5f6d", fade);
+          ctx.globalAlpha = 1;
+          if (armed && Math.random() < 0.3) this.parts.push({ x: x + (Math.random() - 0.5) * r * 1.6, y: y + (Math.random() - 0.5) * r, z: 0, vx: 0, vy: 0, vz: 18, life: 0.6, max: 0.6, c: "#ff3b4e", s: 1, g: 0 });
+          break;
+        }
+        case "singularity": {
+          const k = armed ? 1 : prog;
+          this.disc(px, py, r * k, "#3e1a78", 0.25);
+          this.disc(px, py, r * 0.55 * k, "#22104a", 0.6);
+          this.disc(px, py, 6 * k + Math.sin(now * 12), "#0b0918", 1);
+          ctx.strokeStyle = "#b06aff";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.ellipse(px, py, 7 * k, 5.6 * k, 0, 0, TAU);
+          ctx.stroke();
+          // espiral de partículas hacia el centro
+          for (let j = 0; j < 16; j++) {
+            const t = (now * 0.8 + j / 16) % 1;
+            const an = j * 2.4 + t * 5;
+            const rr = r * k * (1 - t);
+            ctx.fillStyle = j % 2 ? "#e6d0ff" : "#b06aff";
+            ctx.fillRect(px + Math.round(Math.cos(an) * rr), py + Math.round(Math.sin(an) * rr * 0.8), 1, 1);
+          }
+          break;
+        }
+        case "whirl": {
+          this.disc(px, py - 4, r * 0.95, "#8a7bff", 0.12);
+          // estela circular y ocho hojas de energía girando
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = "#7fe3ff";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(px, py - 5, r * 0.9, r * 0.6, 0, now * 18, now * 18 + 4);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          for (let j = 0; j < 8; j++) {
+            const an = now * 16 + (j * TAU) / 8;
+            const rr = r * (j % 2 ? 0.55 : 0.9);
+            const bx = px + Math.cos(an) * rr, by = py - 5 + Math.sin(an) * rr * 0.65;
+            for (const [col, w] of [["#5140c4", 4], [j % 2 ? "#7fe3ff" : "#e6fbff", 2]] as const) {
+              ctx.strokeStyle = col;
+              ctx.lineWidth = w;
+              ctx.beginPath();
+              ctx.moveTo(bx, by);
+              ctx.lineTo(bx + Math.cos(an + 1.7) * 10, by + Math.sin(an + 1.7) * 6);
+              ctx.stroke();
+            }
+          }
+          if (Math.random() < 0.6) {
+            const an = Math.random() * TAU;
+            this.parts.push({ x: x + Math.cos(an) * r * 0.9, y: y + Math.sin(an) * r * 0.6, z: 4, vx: -Math.sin(an) * 60, vy: Math.cos(an) * 40, vz: 10, life: 0.3, max: 0.3, c: "#bff6ff", s: 1, g: 0 });
+          }
+          break;
+        }
         case "ray": {
           const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
           const w = r * (1 - prog * 0.7);
@@ -760,6 +976,99 @@ export class Renderer {
           ctx.globalAlpha = 1;
           break;
         }
+        case "slash2": {
+          const col = f.b === 2 ? "#b06aff" : "#7fe3ff";
+          const sweep = 1.8, dir = f.b === 1 ? -1 : 1;
+          const start = f.a - (sweep / 2) * dir, end = start + sweep * Math.min(1, k * 2.5) * dir;
+          ctx.globalAlpha = 1 - k;
+          for (const [c2, w, rr] of [[col, 4, 20], ["#ffffff", 1, 21]] as const) {
+            ctx.strokeStyle = c2;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            ctx.arc(px, py, rr, Math.min(start, end), Math.max(start, end));
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "afterimage": {
+          ctx.globalAlpha = 0.5 * (1 - k);
+          ctx.fillStyle = f.b === 1 ? "#3fd7ff" : f.b === 2 ? "#2e3150" : "#8a7bff";
+          ctx.fillRect(px - 4, py - 8, 8, 14);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "deflect":
+          ctx.strokeStyle = "#e6fbff";
+          ctx.globalAlpha = 1 - k;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(X(f.x), Y(f.y) - 4, 3 + k * 8, f.a - 1, f.a + 1);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          break;
+        case "hypno": {
+          for (let j = 0; j < 3; j++) {
+            const kk = (k + j * 0.25) % 1;
+            ctx.strokeStyle = j % 2 ? "#e6d0ff" : "#b06aff";
+            ctx.globalAlpha = (1 - kk) * (1 - k * 0.5);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(px, py, f.b * kk + 4, f.a - 0.6, f.a + 0.6);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "drain": {
+          // hilo de sangre ondulante del enemigo al vampiro
+          const x0 = X(f.x), y0 = Y(f.y) - 8, x1 = X(f.a), y1 = Y(f.b) - 8;
+          ctx.globalAlpha = 1 - k * 0.6;
+          for (const [col, w] of [["#8a1a3a", 3], ["#ff3b4e", 1]] as const) {
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            for (let j = 0; j <= 10; j++) {
+              const t = j / 10, wob = Math.sin(t * 9 + f.t * 30) * 2 * (1 - Math.abs(t - 0.5) * 2);
+              const xx = x0 + (x1 - x0) * t, yy = y0 + (y1 - y0) * t + wob;
+              if (j) ctx.lineTo(xx, yy);
+              else ctx.moveTo(xx, yy);
+            }
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          if (Math.random() < 0.5) {
+            const t = Math.random();
+            this.parts.push({ x: f.x + (f.a - f.x) * t, y: f.y + (f.b - f.y) * t, z: 8, vx: (f.a - f.x) * 1.5, vy: (f.b - f.y) * 1.5, vz: 0, life: 0.2, max: 0.2, c: "#ff3b4e", s: 1, g: 0 });
+          }
+          break;
+        }
+        case "bolt": {
+          const x0 = X(f.x), y0 = Y(f.y), x1 = X(f.a), y1 = Y(f.b);
+          ctx.globalAlpha = 1 - k;
+          for (const [col, w] of [["#3fd7ff", 3], ["#ffffff", 1]] as const) {
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            for (let j = 1; j < 6; j++) {
+              const t = j / 6;
+              ctx.lineTo(x0 + (x1 - x0) * t + Math.round((Math.random() - 0.5) * 8), y0 + (y1 - y0) * t + Math.round((Math.random() - 0.5) * 8));
+            }
+            ctx.lineTo(x1, y1);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "log": {
+          const spr = projSprite("log");
+          ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
+          this.shadow(X(f.x), Y(f.y), 5);
+          ctx.drawImage(spr, X(f.x) - (spr.width >> 1), Y(f.y) - spr.height);
+          ctx.globalAlpha = 1;
+          break;
+        }
         case "snap":
           ctx.fillStyle = "#dfe4ee";
           ctx.globalAlpha = 1 - k;
@@ -770,6 +1079,15 @@ export class Renderer {
       }
     }
     this.fx = this.fx.filter((f) => f.t < f.max);
+  }
+
+  drawSmoke(x: number, y: number, r: number, prog: number, X: (n: number) => number, Y: (n: number) => number, now: number, alpha: number) {
+    const fade = Math.min(1, (1 - prog) * 5, prog * 30);
+    for (let k = 0; k < 9; k++) {
+      const an = (k / 9) * TAU + now * 0.25 + k;
+      const rr = r * (0.35 + (k % 3) * 0.2);
+      this.disc(X(x + Math.cos(an) * rr), Y(y + Math.sin(an) * rr * 0.8) - 6, r * 0.45, k % 2 ? "#7d8499" : "#c9cfdc", alpha * fade);
+    }
   }
 
   // ------------------------------------------------------------ utilidades

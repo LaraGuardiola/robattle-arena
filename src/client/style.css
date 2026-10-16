@@ -206,6 +206,9 @@ input:focus { border-color: var(--yellow); }
 .mini.diff.d2 { color: var(--red); }
 .mini.sit { background: var(--yellow); color: var(--ink); box-shadow: inset -2px -2px 0 #c08a10, inset 2px 2px 0 #fff3b0; margin-right: auto; }
 #lobby-detail { width: min(1100px, 100%); padding: 10px 14px; }
+#champ-pick { gap: 4px; margin-bottom: 8px; }
+#champ-pick .btn { font-size: 13px; padding: 2px 6px 2px 2px; display: inline-flex; align-items: center; gap: 3px; }
+#champ-pick .btn img { width: 28px; height: 26px; }
 @media (max-width: 860px) {
   #teams { flex-direction: column; }
   .vs { font-size: 26px; }

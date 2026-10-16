@@ -77,7 +77,7 @@ function toast(msg: string) {
 }
 
 function renderTitle() {
-  $("title-bots").innerHTML = CHAMP_IDS.map((c, i) => `<img src="${robotURL(c, 4, i >= 3)}" alt="">`).join("");
+  $("title-bots").innerHTML = CHAMP_IDS.map((c, i) => `<img src="${robotURL(c, 4, i >= CHAMP_IDS.length / 2)}" alt="">`).join("");
   const st = save.stats;
   $("title-foot").innerHTML = st.games ? `<span>Partidas: ${st.games}</span><span>Victorias: ${st.wins}</span>` : `<span>Un battle arena de robots · 1v1 y 2v2</span>`;
 }
@@ -248,7 +248,7 @@ function renderLobby() {
   }
   // selector de campeón para el teclado / este cliente
   const picker = (lan || findSeat("kb"))
-    ? `<div class="row" id="champ-pick">${CHAMP_IDS.map((c) => `<button class="btn ${c === detailChamp ? "on" : "ghost"}" data-pick="${c}">${CHAMPS[c].name}</button>`).join("")}</div>`
+    ? `<div class="row" id="champ-pick">${CHAMP_IDS.map((c) => `<button class="btn ${c === detailChamp ? "on" : "ghost"}" data-pick="${c}"><img src="${robotURL(c, 2)}" alt="">${CHAMPS[c].name}</button>`).join("")}</div>`
     : "";
   $("lobby-detail").innerHTML = picker + champHTML(detailChamp, !lan && !findSeat("kb") && padsRaw().length > 0);
   for (const b of $("lobby-detail").querySelectorAll<HTMLElement>("[data-pick]")) b.onclick = () => pickChamp(b.dataset.pick as ChampId);

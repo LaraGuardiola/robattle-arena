@@ -5,12 +5,12 @@ import {
   ARENA_RX, ARENA_RY, CAPSULE_AT, CAPSULE_HEAL, CAPSULE_POS, CHAMPS, ENERGY_MAX, ENERGY_PER_DMG, ENERGY_REGEN, FIGHTER_R,
   ORB_AT, ORB_ENERGY, ORB_HEAL, ORB_HP, PILLARS, ROUND_COUNTDOWN, ROUND_END_PAUSE, SLOTS, SLOT_BIT, SPAWNS, SPAWNS_2V2,
   STORM_AT, STORM_DPS, STORM_MIN, STORM_TIME,
-  type ChampDef, type ChampId, type Difficulty, type SkillDef, type Slot,
+  clampArena, type ChampDef, type ChampId, type Difficulty, type SkillDef, type Slot,
 } from "./data";
 import { angleDiff, clamp, dist2, Rng, segDist2 } from "./math";
 import { NO_INPUT, PROJ_KINDS, ST, ZONE_KINDS, type Ev, type FSnap, type Input, type Phase, type Snap } from "./protocol";
 import { botThink, type Bot } from "./ai";
-import { SKILLS } from "./skills";
+import { CHANNELS, SKILLS } from "./skills";
 
 export const DT = 1 / 60;
 
@@ -26,6 +26,8 @@ export interface Motion {
   /** altura máxima del arco (salto) */
   h: number;
   hit: Set<number>;
+  /** empujón que choca contra un muro o pilar */
+  slam?: () => void;
   /** al tocar a un enemigo; devuelve true para frenar */
   touch?: (e: Fighter) => boolean;
   end?: () => void;
@@ -68,6 +70,20 @@ export interface Fighter {
   invuln: number;
   stealth: number;
   counter: number;
+  /** miedo: huye de (fearX, fearY) sin poder actuar */
+  fear: number;
+  fearX: number;
+  fearY: number;
+  /** guardia que devuelve proyectiles de frente */
+  deflect: number;
+  /** forma de niebla: intocable y sin poder atacar */
+  mist: number;
+  /** torbellino: gira sin poder usar otras skills */
+  spin: number;
+  /** ocupado (definitivas con varios golpes): ni se mueve ni actúa */
+  lock: number;
+  /** canalización en curso (Drenar) */
+  chan: { t: number; target: Fighter | null };
   block: number;
   shield: number;
   shieldT: number;
@@ -129,6 +145,11 @@ export interface Zone {
   hit: Set<number>;
   onArm?: (w: World, z: Zone) => void;
   onTick?: (w: World, z: Zone) => void;
+  onEnd?: (w: World, z: Zone) => void;
+  /** sigue a un robot */
+  follow?: Fighter;
+  /** cúpula: frena los proyectiles enemigos que intentan entrar */
+  dome: boolean;
   dead: boolean;
 }
 
@@ -197,6 +218,7 @@ export class World {
         cds: { r2: 0, l2: 0, a: 0, x: 0, y: 0, b: 0 }, cast: null,
         input: { ...NO_INPUT, ax: s.team ? -1 : 1 }, prevB: 0, buffer: null, bufferT: 0,
         stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, slowK: 0, haste: 0, hasteK: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
+        fear: 0, fearX: 0, fearY: 0, deflect: 0, mist: 0, spin: 0, lock: 0, chan: { t: 0, target: null },
         shield: 0, shieldT: 0, hots: [], stormAcc: 0, motion: null, bonus: 0, combo: 0, comboT: 0, flash: 0, lastHitBy: null,
         stats: { dmg: 0, heal: 0, kos: 0 },
         bot: s.human ? null : { diff: s.diff ?? 1, think: 0, strafe: this.rng.next() < 0.5 ? 1 : -1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 },
@@ -223,6 +245,7 @@ export class World {
       Object.assign(f, {
         x, y, z: 0, vx: 0, vy: 0, hp: f.maxHp, dead: false, cast: null, buffer: null, motion: null,
         stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, haste: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
+        fear: 0, deflect: 0, mist: 0, spin: 0, lock: 0,
         shield: 0, shieldT: 0, hots: [], bonus: 0, combo: 0, flash: 0, lastHitBy: null, face: f.team ? Math.PI : 0,
       });
       // la energía se conserva entre rondas (como en Battlerite), las recargas no
@@ -400,7 +423,7 @@ export class World {
   }
 
   canAct(f: Fighter) {
-    return !f.dead && f.stun <= 0 && f.sleep <= 0 && !f.motion;
+    return !f.dead && f.stun <= 0 && f.sleep <= 0 && f.fear <= 0 && f.lock <= 0 && f.mist <= 0 && f.spin <= 0 && !f.motion;
   }
 
   canUse(f: Fighter, slot: Slot) {
@@ -414,11 +437,12 @@ export class World {
 
   updateFighter(f: Fighter, dt: number) {
     // ---- estados
-    const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block") => {
+    const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block" | "fear" | "deflect" | "mist" | "spin" | "lock") => {
       if (f[k] > 0) f[k] = Math.max(0, f[k] - dt);
     };
     dec("stun"); dec("root"); dec("silence"); dec("sleep"); dec("slow"); dec("haste");
     dec("invuln"); dec("stealth"); dec("counter"); dec("block");
+    dec("fear"); dec("deflect"); dec("mist"); dec("spin"); dec("lock");
     if (f.shieldT > 0) {
       f.shieldT -= dt;
       if (f.shieldT <= 0) f.shield = 0;
@@ -457,7 +481,14 @@ export class World {
             m.hit.add(e.id);
             if (m.touch(e)) m.t = 0;
           }
-      if (blocked && !m.air) m.t = 0;
+      if (blocked && !m.air) {
+        if (m.knock && m.slam && m.t > 0.02) {
+          const slam = m.slam;
+          m.slam = undefined;
+          slam();
+        }
+        m.t = 0;
+      }
       f.vx = m.vx;
       f.vy = m.vy;
       f.moving = true;
@@ -472,10 +503,13 @@ export class World {
 
     // ---- lanzamiento en curso
     if (f.cast) {
-      if (f.stun > 0 || f.sleep > 0) f.cast = null;
+      if (f.stun > 0 || f.sleep > 0 || f.fear > 0) f.cast = null;
       else {
         f.cast.t += dt;
-        if (f.cast.t >= f.cast.total) {
+        const cs = f.def.skills[f.cast.slot];
+        const ch = CHANNELS[cs.id];
+        if (ch && !ch(this, f, this.aimOf(f, cs), dt)) f.cast = null;
+        if (f.cast && f.cast.t >= f.cast.total) {
           const slot = f.cast.slot;
           f.cast = null;
           this.fire(f, slot);
@@ -505,12 +539,22 @@ export class World {
 
     // ---- caminar
     let sp = f.def.speed;
-    if (f.stun > 0 || f.sleep > 0 || f.root > 0 || this.phase !== "fight") sp = 0;
+    if (f.stun > 0 || f.sleep > 0 || f.root > 0 || f.lock > 0 || this.phase !== "fight") sp = 0;
     if (f.slow > 0) sp *= 1 - f.slowK;
     if (f.haste > 0) sp *= 1 + f.hasteK;
     if (f.cast) sp *= f.def.skills[f.cast.slot].castMove;
     if (f.block > 0) sp *= 0.5;
+    if (f.spin > 0) sp *= 0.75;
     let { mx, my } = f.input;
+    if (f.fear > 0) {
+      // huye de quien le ha asustado
+      mx = f.x - f.fearX;
+      my = f.y - f.fearY;
+      const fl = Math.hypot(mx, my) || 1;
+      mx /= fl;
+      my /= fl;
+      sp *= 0.85;
+    }
     const l = Math.hypot(mx, my);
     if (l > 1) {
       mx /= l;
@@ -528,6 +572,7 @@ export class World {
     f.cds[slot] = s.cd;
     if (s.ult) f.energy = 0;
     if (s.id !== "stealth") f.stealth = 0;
+    f.chan = { t: 0, target: null };
     if (s.cast > 0) {
       f.cast = { slot, t: 0, total: s.cast };
       if (s.cast >= 0.3) this.sfx("charge");
@@ -700,11 +745,20 @@ export class World {
   }
 
   /** Empuja a un robot (interrumpe lo que esté lanzando). */
-  knock(t: Fighter, dx: number, dy: number, dist: number, dur = 0.22) {
+  knock(t: Fighter, dx: number, dy: number, dist: number, dur = 0.22, slam?: () => void) {
     if (!this.ccable(t)) return;
     const l = Math.hypot(dx, dy) || 1;
     t.cast = null;
-    t.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: false, knock: true, h: 0, hit: new Set() };
+    t.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: false, knock: true, h: 0, hit: new Set(), slam };
+  }
+
+  fearFor(t: Fighter, src: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.fear = Math.max(t.fear, d);
+    t.fearX = src.x;
+    t.fearY = src.y;
+    t.cast = null;
+    this.popup(t.x, t.y - 26, "¡MIEDO!", "#b06aff");
   }
 
   /** Movimiento propio (carga, salto, rodar). */
@@ -785,6 +839,19 @@ export class World {
           if (e.team === p.team && !p.allies) continue;
           if (e.motion?.air) continue;
           if (dist2(e.x, e.y - 4, p.x, p.y) > (FIGHTER_R + p.r + 1) ** 2) continue;
+          if (e.deflect > 0 && e.team !== p.team && Math.abs(angleDiff(e.face, Math.atan2(p.y - e.y, p.x - e.x))) < 1.35) {
+            // guardia: el proyectil vuelve contra quien lo lanzó
+            p.vx = -p.vx;
+            p.vy = -p.vy;
+            p.team = e.team;
+            p.owner = e;
+            p.hit = new Set([e.id]);
+            p.dist = Math.max(p.dist, 160);
+            this.fx("deflect", p.x, p.y, Math.atan2(p.vy, p.vx), 0);
+            this.sfx("block");
+            this.popup(e.x, e.y - 22, "¡DEVUELTO!", "#7fe3ff");
+            break;
+          }
           p.hit.add(e.id);
           p.onHit(this, e, p);
           if (!p.pierce) {
@@ -802,6 +869,17 @@ export class World {
         }
         // pilares, muros de fuego, borde
         let hitWall = PILLARS.some((q) => dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2);
+        if (!hitWall)
+          for (const z of this.zones)
+            if (z.dome && z.armed && z.team !== p.team) {
+              const now = dist2(p.x, p.y, z.x, z.y), before = dist2(p.x - p.vx * sdt, p.y - p.vy * sdt, z.x, z.y);
+              if (now <= z.r * z.r && before > z.r * z.r) {
+                hitWall = true;
+                this.fx("spark", p.x, p.y, 0, 0);
+                this.sfx("orbhit");
+                break;
+              }
+            }
         if (!hitWall)
           for (const z of this.zones)
             if (z.wall && z.armed && z.team !== p.team) {
@@ -823,11 +901,14 @@ export class World {
   }
 
   // ============================================================ zonas
-  zone(f: Fighter, o: { kind: Zone["kind"]; x: number; y: number; r: number; delay: number; dur: number; a?: number; len?: number; tickEvery?: number; wall?: boolean; onArm?: Zone["onArm"]; onTick?: Zone["onTick"] }) {
+  zone(f: Fighter, o: {
+    kind: Zone["kind"]; x: number; y: number; r: number; delay: number; dur: number; a?: number; len?: number; tickEvery?: number; wall?: boolean;
+    dome?: boolean; follow?: Fighter; onArm?: Zone["onArm"]; onTick?: Zone["onTick"]; onEnd?: Zone["onEnd"];
+  }) {
     const z: Zone = {
       id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
       delay: o.delay, dur: o.dur, t: 0, armed: o.delay <= 0, tickEvery: o.tickEvery ?? 0, tickT: 0, wall: !!o.wall, hit: new Set(),
-      onArm: o.onArm, onTick: o.onTick, dead: false,
+      onArm: o.onArm, onTick: o.onTick, onEnd: o.onEnd, follow: o.follow, dome: !!o.dome, dead: false,
     };
     this.zones.push(z);
     if (z.armed) z.onArm?.(this, z);
@@ -837,6 +918,14 @@ export class World {
   updateZones(dt: number) {
     for (const z of this.zones) {
       z.t += dt;
+      if (z.follow) {
+        if (z.follow.dead) {
+          z.dead = true;
+          continue;
+        }
+        z.x = z.follow.x;
+        z.y = z.follow.y;
+      }
       if (!z.armed) {
         if (z.t >= z.delay) {
           z.armed = true;
@@ -855,7 +944,10 @@ export class World {
           }
         }
       }
-      if (z.t >= z.dur) z.dead = true;
+      if (z.t >= z.dur) {
+        z.dead = true;
+        z.onEnd?.(this, z);
+      }
     }
     this.zones = this.zones.filter((z) => !z.dead);
   }
@@ -896,6 +988,10 @@ export class World {
       if (a.haste > 0) st |= ST.haste;
       if (a.dead) st |= ST.dead;
       if (a.invuln > 0) st |= ST.invuln;
+      if (a.fear > 0) st |= ST.fear;
+      if (a.deflect > 0) st |= ST.deflect;
+      if (a.mist > 0) st |= ST.mist;
+      if (a.spin > 0) st |= ST.spin;
       if (a.hots.length) st |= ST.hot;
       return {
         id: a.id, name: a.name, champ: a.champ, team: a.team, human: a.human,
@@ -923,10 +1019,4 @@ export class World {
   }
 }
 
-/** Mete un punto dentro de la elipse de la arena (con margen). */
-export function clampArena(x: number, y: number, m: number): [number, number] {
-  const rx = ARENA_RX - m, ry = ARENA_RY - m;
-  const d = Math.hypot(x / rx, y / ry);
-  if (d <= 1) return [x, y];
-  return [x / d, y / d];
-}
+export { clampArena };
