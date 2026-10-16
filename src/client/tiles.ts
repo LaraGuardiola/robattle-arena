@@ -308,6 +308,10 @@ export function bakeArena(seed: number, themeIdx: number) {
         const b = biomeAt(wx, wy, seed);
         bio[py * w + px] = b + 1;
         let c = T.base(b, wx, wy, bay, seed);
+        // suelo más tranquilo que en Survivors: aquí hay que leer cada proyectil
+        if (b === 1 && themeIdx === 2) c = mix(c, hexRgb("#313648"), 0.72);
+        else if (b === 2 && themeIdx === 3) c = mix(c, hexRgb("#1f1a2e"), 0.5);
+        c = mix(c, [40, 36, 56], 0.12);
         // líneas del campo: círculo central y línea media
         const rc = Math.hypot(wx, wy * 1.15);
         if ((rc > 38 && rc < 40) || (Math.abs(wx) < 1 && Math.abs(wy) > 40)) c = mix(c, line, 0.35);
