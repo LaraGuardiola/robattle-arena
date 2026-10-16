@@ -485,6 +485,8 @@ function startLocal() {
     }
   const seed = (Math.random() * 2 ** 31) | 0;
   world = new World({ seed, wins: save.wins, arena: save.arena }, specs);
+  // ?full: los humanos empiezan con la energía llena (para probar definitivas)
+  if (new URLSearchParams(location.search).has("full")) for (const f of world.fighters) if (f.human) f.energy = 100;
   mode = "local";
   beginGame(seed, save.arena);
 }

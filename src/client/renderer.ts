@@ -571,19 +571,29 @@ export class Renderer {
         }
         case "firewall": {
           const c = Math.cos(a + Math.PI / 2), sn = Math.sin(a + Math.PI / 2);
-          for (let k = -len / 2; k <= len / 2; k += 3) {
-            const fx = x + c * k, fy = y + sn * k;
-            if (!armed) {
+          if (!armed) {
+            for (let k = -len / 2; k <= len / 2; k += 3) {
               ctx.fillStyle = Math.floor(now * 12) % 2 ? "#ff8a2b" : "#ff3b4e";
-              ctx.fillRect(X(fx), Y(fy), 1, 1);
-              continue;
+              ctx.fillRect(X(x + c * k), Y(y + sn * k), 2, 2);
             }
-            const h = 6 + Math.round(Math.sin(now * 14 + k) * 3);
+            break;
+          }
+          const fade = Math.min(1, (1 - prog) * 6);
+          // brasas en la base
+          for (let k = -len / 2; k <= len / 2; k += 4) this.disc(X(x + c * k), Y(y + sn * k), 5, "#ff3b4e", 0.35 * fade);
+          for (let k = -len / 2; k <= len / 2; k += 4) this.disc(X(x + c * k), Y(y + sn * k), 3, "#ff8a2b", 0.6 * fade);
+          // lenguas de fuego
+          for (let k = -len / 2; k <= len / 2; k += 5) {
+            const fx = x + c * k, fy = y + sn * k;
+            const h = Math.round((7 + Math.sin(now * 14 + k) * 3) * fade);
+            const ox = Math.round(Math.sin(now * 9 + k * 0.7) * 1.5);
             ctx.fillStyle = "#ff3b4e";
-            ctx.fillRect(X(fx) - 1, Y(fy) - h, 3, h);
+            ctx.fillRect(X(fx) - 2 + ox, Y(fy) - h, 5, h);
+            ctx.fillStyle = "#ff8a2b";
+            ctx.fillRect(X(fx) - 1 + ox, Y(fy) - h + 2, 3, h - 2);
             ctx.fillStyle = "#ffd23f";
-            ctx.fillRect(X(fx), Y(fy) - h + 2, 1, h - 3);
-            if (Math.random() < 0.06) this.parts.push({ x: fx, y: fy, z: h, vx: 0, vy: 0, vz: 20, life: 0.3, max: 0.3, c: "#ff8a2b", s: 1, g: 0 });
+            ctx.fillRect(X(fx) + ox, Y(fy) - h + 4, 1, Math.max(0, h - 5));
+            if (Math.random() < 0.08) this.parts.push({ x: fx, y: fy, z: h, vx: 0, vy: 0, vz: 20, life: 0.35, max: 0.35, c: "#ffd23f", s: 1, g: 0 });
           }
           break;
         }
