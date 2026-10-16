@@ -24,6 +24,9 @@
   objetos con vida en `w.props` (`addProp`, cajas y futuras barricadas/espejos).
   Las trampas de las palancas están en `src/shared/traps.ts` (con `trapGood` /
   `trapDodge` para la IA); dañan a todos por igual y siempre avisan antes.
+- Mecánicas de la tanda 1 (reutilizables): `SkillDef.charge` (carga al soltar),
+  `charges`, `back`; `ChampDef.heat`; proyectiles con `ret` (vuelven),
+  `bounces`, `ghost` y `carry`. Ver `docs/ROADMAP.md` §0.
 - La IA de los bots (`src/shared/ai.ts`) usa la pista `SkillDef.ai` de cada skill.
   Tras tocar equilibrio, pasar `bun run sim` (partidas bot contra bot con
   porcentajes de victoria 1v1 y 2v2 y recuento de skills usadas).

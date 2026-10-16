@@ -13,8 +13,18 @@ con selector en la sala (y "Al azar"), arenas Desguace (cajas rompibles) y
 Núcleo (columnas que suben a los 30 s), entidad `Prop` con vida (`w.props`),
 estado "por los aires" (`w.launchUp`), palancas y las 5 trampas
 (`src/shared/traps.ts`) con IA que las usa y las esquiva. Las cintas
-transportadoras de la Fábrica quedan pendientes. Siguiente: paso 4 (mecánicas
-de proyectil) y la tanda 1 de campeones.
+transportadoras de la Fábrica quedan pendientes.
+
+**Hecho (tanda 1):** Arquibot, Gatlinga y Boomera con su arte. Mecánicas de
+motor nuevas: carga al soltar (`SkillDef.charge`, `f.chargeK`), calor
+(`ChampDef.heat`, `w.addHeat`), cargas (`SkillDef.charges`), movilidad hacia
+atrás (`SkillDef.back`), daño potenciado (`dmgUp`), marca (`markT`/`markBy`),
+anclaje (`anchor`), proyectiles que vuelven (`ret`, `turnBack`), rebotan
+(`bounces`), arrastran (`carry`) o atraviesan objetos (`ghost`), y
+`w.nearWall`. Desviaciones del diseño: Flecha 7→21 en 1 s, Lluvia 1,5 s de 4,
+Rotativa 5 de daño y 4 de calor, el Bumerán recarga 1,4 s (atraparlo la
+reinicia), Atrapada perfecta también hace volver los bumeranes en vuelo y la
+trazadora reduce el calor a la mitad mientras dura la marca.
 
 - 10 campeones en `src/shared/data.ts` (`CHAMPS`), comportamiento en
   `src/shared/skills.ts` (`SKILLS` + `CHANNELS` para canalizaciones).

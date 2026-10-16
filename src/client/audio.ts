@@ -247,6 +247,17 @@ const SFX: Record<string, () => void> = {
     noise(0.3, 0.25, 6000, 0, sfxBus, 3);
     tone("sawtooth", 600, 1500, 0.25, 0.1);
   },
+  // ---- tanda 1
+  bow: () => {
+    tone("triangle", 220, 660, 0.08, 0.12);
+    noise(0.06, 0.12, 6000);
+  },
+  overheat: () => {
+    noise(0.8, 0.25, 2000, 0, sfxBus, 1);
+    tone("square", 900, 300, 0.3, 0.1);
+  },
+  ricochet: () => tone("square", 2200, 1400, 0.06, 0.08),
+  catch: () => [880, 1320].forEach((f, i) => tone("square", f, f, 0.06, 0.08, i * 0.05)),
   // ---- palancas y trampas
   lever: () => {
     tone("square", 200, 140, 0.08, 0.16);

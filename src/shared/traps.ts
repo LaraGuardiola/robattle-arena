@@ -172,6 +172,8 @@ export function trapDodge(w: World, f: Fighter): [number, number] | null {
     return d < 1 ? [-f.x / (Math.hypot(f.x, f.y) || 1), -f.y / (Math.hypot(f.x, f.y) || 1)] : [dx / d, dy / d];
   };
   for (const z of w.zones as Zone[]) {
+    // lluvias de flechas enemigas: salir de debajo
+    if (z.kind === "rain" && z.team !== f.team && dist2(f.x, f.y, z.x, z.y) < (z.r + 8) ** 2) return away(z.x, z.y);
     if (z.team !== -1) continue;
     switch (z.kind) {
       case "geyser":

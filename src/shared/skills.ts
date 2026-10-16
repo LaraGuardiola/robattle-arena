@@ -659,7 +659,216 @@ export const SKILLS: Record<string, SkillFn> = {
       },
     });
   },
+
+  // ================================================================ Arquibot
+  arrow(w, f, a, s) {
+    const k = f.chargeK, full = k >= 0.99;
+    const dmg = Math.round(7 + 14 * k);
+    w.sfx(full ? "snipe" : "bow");
+    w.proj(f, {
+      kind: full ? "arrowFull" : "arrow", dx: a.dx, dy: a.dy, speed: 300 + 350 * k, range: 160 + (s.range - 160) * k, r: 3, dmg, pierce: full,
+      onHit: (w, t, p) => {
+        w.damage(p.owner, t, dmg, { from: [p.x, p.y] });
+        // tensada del todo atraviesa sólo al primero
+        if (p.hit.size >= 2) p.dead = true;
+      },
+    });
+  },
+  rain(w, f, a, s) {
+    w.sfx("throw");
+    w.zone(f, {
+      kind: "rain", x: a.tx, y: a.ty, r: s.size, delay: 0.5, dur: 1.5, tickEvery: 0.25,
+      onArm: (w) => w.sfx("bow"),
+      onTick: (w, z) => {
+        for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) if (w.damage(f, e, 4, { from: [z.x, z.y] })) w.slowFor(e, 0.2, 0.4);
+      },
+    });
+  },
+  flip(w, f, a, s) {
+    w.sfx("leap");
+    w.fx("afterimage", f.x, f.y, angle(a), 0);
+    w.dash(f, -a.dx, -a.dy, s.range, 0.38, { air: true, h: 20, end: () => (f.preCharge = 0.5) });
+  },
+  pin(w, f, a, s) {
+    w.sfx("bow");
+    w.proj(f, {
+      kind: "pin", dx: a.dx, dy: a.dy, speed: 520, range: s.range, r: 3, dmg: 10,
+      onHit: shot(10, (w, t) => {
+        if (w.nearWall(t.x, t.y, 30)) {
+          w.root(t, 1.6);
+          w.popup(t.x, t.y - 34, "¡CLAVADO!", "#c87a3a");
+          w.fx("snap", t.x, t.y, 0, 0);
+        } else w.slowFor(t, 0.4, 1.2);
+      }),
+    });
+  },
+  hawk(w, f, _a, s) {
+    f.dmgUp = 4;
+    f.dmgUpK = 0.2;
+    w.sfx("shield");
+    w.zone(f, {
+      kind: "hawk", x: f.x, y: f.y, r: s.size, delay: 0, dur: 4, tickEvery: 0.1, follow: f,
+      onTick: (w, z) => {
+        for (const e of w.fighters)
+          if (e.team !== f.team && !e.dead && e.stealth > 0 && dist2(e.x, e.y, z.x, z.y) < z.r * z.r) {
+            e.stealth = 0;
+            w.popup(e.x, e.y - 26, "¡VISTO!", "#b8ff5f");
+          }
+      },
+    });
+  },
+  stormarrow(w, f, a, s) {
+    w.sfx("ray");
+    w.fx("shake", f.x, f.y, 4, 0);
+    w.proj(f, {
+      kind: "arrowBig", dx: a.dx, dy: a.dy, speed: 520, range: s.range, r: 7, dmg: 30, pierce: true,
+      onHit: (w, t, p) => {
+        w.damage(p.owner, t, Math.min(45, 22 + Math.floor((s.range - p.dist) / 10)), { from: [p.x, p.y] });
+        w.fx("boom", t.x, t.y - 4, 12, 0);
+      },
+    });
+  },
+
+  // ================================================================ Gatlinga
+  rotary(w, f, a, s) {
+    const turret = f.anchor > 0;
+    const k = Math.min(1, f.ramp / 1.5);
+    const gap = turret ? 0.1 : 0.28 - 0.18 * k;
+    f.cds.r2 = gap;
+    f.ramp += gap;
+    // trazadora: mientras haya un enemigo marcado por ella, el calor sube la mitad
+    const marked = w.fighters.some((e) => e.markT > 0 && e.markBy === f);
+    if (turret) f.heatIdle = 0;
+    else w.addHeat(f, marked ? 2 : 4);
+    const an = angle(a) + (w.rng.next() - 0.5) * (turret ? 0.06 : 0.04 + 0.08 * k);
+    w.fx("muzzle", f.x + a.dx * 10, f.y + a.dy * 10 - 6, an, 0);
+    w.sfx("minigun");
+    const dmg = turret ? 7 : 5;
+    w.proj(f, { kind: "gbullet", dx: Math.cos(an), dy: Math.sin(an), speed: 440, range: s.range, r: 2, dmg, ghost: turret, onHit: shot(dmg) });
+  },
+  steam(w, f, a, s) {
+    const dmg = 6 + Math.floor(f.heat / 4);
+    w.fx("steam", f.x, f.y, angle(a), s.range);
+    w.sfx("geyser");
+    for (const e of coneTargets(w, f, s.range, 1.5))
+      if (w.damage(f, e, dmg, { from: [f.x, f.y] })) w.knock(e, e.x - f.x, e.y - f.y, 26);
+    w.blastProps(f.x + a.dx * 30, f.y + a.dy * 30, 30, dmg, f);
+    f.heat = 0;
+    f.overheat = 0;
+  },
+  recoil(w, f, a, s) {
+    w.fx("fist", f.x, f.y, angle(a), 30);
+    w.sfx("shotgun");
+    for (const e of coneTargets(w, f, 30, 1.4)) w.damage(f, e, 8, { from: [f.x, f.y] });
+    w.dash(f, -a.dx, -a.dy, s.range, 0.26);
+  },
+  barricade(w, f, a) {
+    for (const p of w.props) if (p.kind === "barricade" && p.owner === f) w.breakProp(p);
+    w.sfx("armor");
+    w.addProp(f, {
+      kind: "barricade", x: a.tx, y: a.ty, r: 3, len: 40, a: angle(a) + Math.PI / 2, hp: 60, t: 8,
+      onBreak: (w, p) => {
+        w.fx("scrap", p.x, p.y, 0, 0);
+        w.sfx("crate");
+      },
+    });
+  },
+  tracer(w, f, a, s) {
+    w.fx("muzzle", f.x + a.dx * 10, f.y + a.dy * 10 - 6, angle(a), 0);
+    w.sfx("snipe");
+    w.proj(f, {
+      kind: "tracer", dx: a.dx, dy: a.dy, speed: 620, range: s.range, r: 3, dmg: 6,
+      onHit: shot(6, (w, t, p) => {
+        t.markT = 4;
+        t.markBy = p.owner;
+        w.popup(t.x, t.y - 34, "¡MARCADO!", "#ff3b4e");
+      }),
+    });
+  },
+  turretmode(w, f) {
+    f.anchor = 3;
+    f.heat = 0;
+    f.overheat = 0;
+    f.cds.r2 = 0;
+    w.fx("ring", f.x, f.y, 24, 1);
+    w.fx("shake", f.x, f.y, 3, 0);
+    w.sfx("treads");
+  },
+
+  // ================================================================ Boomera
+  boomerang(w, f, a, s) {
+    w.sfx("throw");
+    w.proj(f, {
+      kind: "boomer", dx: a.dx, dy: a.dy, speed: 340, range: s.range, r: 4, dmg: 8, ret: true, onHit: shot(8),
+      onCatch: (w) => catchBoomer(w, f, true),
+    });
+  },
+  chakram(w, f, a) {
+    w.sfx("throw");
+    w.proj(f, { kind: "chakram", dx: a.dx, dy: a.dy, speed: 300, range: 430, r: 4, dmg: 12, pierce: true, bounces: 3, onHit: shot(12) });
+  },
+  slide(w, f, a, s) {
+    w.sfx("dash");
+    w.fx("afterimage", f.x, f.y, angle(a), 0);
+    w.dash(f, a.dx, a.dy, s.range, 0.18);
+  },
+  bigboomer(w, f, a, s) {
+    w.sfx("throw");
+    w.proj(f, {
+      kind: "bigboomer", dx: a.dx, dy: a.dy, speed: 210, range: s.range, r: 7, dmg: 10, ret: true,
+      onHit: (w, t, p) => {
+        if (!w.damage(p.owner, t, 10, { from: [p.x, p.y] })) return;
+        // a la ida se lo lleva consigo
+        if (!p.ret?.back && w.ccable(t) && t.anchor <= 0) {
+          p.carry.push(t);
+          t.cast = null;
+          t.charge = null;
+        }
+      },
+      onCatch: (w) => catchBoomer(w, f, false),
+    });
+  },
+  perfectcatch(w, f) {
+    f.catchBuff = 2;
+    w.fx("ring", f.x, f.y, 20, 3);
+    w.sfx("shield");
+    for (const p of w.projs) if (p.owner === f && p.ret) w.turnBack(p);
+  },
+  blades(w, f, _a, s) {
+    w.sfx("frenzy");
+    const last = new Map<number, number>();
+    w.zone(f, {
+      kind: "blades", x: f.x, y: f.y, r: s.size, delay: 0, dur: 3, tickEvery: 0, follow: f,
+      onTick: (w, z) => {
+        const rr = 20 + 60 * (z.t / z.dur), base = z.t * 6;
+        for (const e of w.fighters) {
+          if (e.team === f.team || !w.targetable(e)) continue;
+          if (z.t - (last.get(e.id) ?? -9) < 0.35) continue;
+          for (let k = 0; k < 6; k++) {
+            const an = base + (k * Math.PI * 2) / 6;
+            if (dist2(e.x, e.y, z.x + Math.cos(an) * rr, z.y + Math.sin(an) * rr * 0.8) < 11 * 11) {
+              last.set(e.id, z.t);
+              w.damage(f, e, 9, { from: [z.x, z.y] });
+              break;
+            }
+          }
+        }
+      },
+    });
+  },
 };
+
+/** Boomera atrapa un bumerán: recarga el básico y, con Atrapada perfecta, cura y acelera las recargas. */
+function catchBoomer(w: World, f: Fighter, resetR2: boolean) {
+  if (resetR2) f.cds.r2 = 0;
+  w.fx("heal", f.x, f.y, 0, 0);
+  w.sfx("catch");
+  if (f.catchBuff > 0) {
+    w.heal(f, f, 8);
+    for (const sl of ["l2", "a", "x"] as const) f.cds[sl] = Math.max(0, f.cds[sl] - 2);
+    w.popup(f.x, f.y - 30, "¡ATRAPADO!", "#2ec4b6");
+  }
+}
 
 const DT_PULL = 1 / 60;
 

@@ -123,9 +123,16 @@ export interface SkillDef {
   ai: AiUse;
   /** cuesta toda la energía */
   ult?: boolean;
+  /** se carga mientras se mantiene y se dispara al soltar (s de carga máxima y velocidad al cargar) */
+  charge?: { max: number; move: number };
+  /** cargas: la recarga repone una cada vez */
+  charges?: number;
+  /** movilidad hacia atrás (contraria a la mira): la IA apunta al enemigo para huir */
+  back?: boolean;
 }
 
-export type ChampId = "beetlix" | "coltron" | "merlix" | "florak" | "nekobot" | "sawkuwa" | "tanker" | "vladbot" | "nexus" | "shinobot";
+export type ChampId = "beetlix" | "coltron" | "merlix" | "florak" | "nekobot" | "sawkuwa" | "tanker" | "vladbot" | "nexus" | "shinobot"
+  | "arquibot" | "gatlinga" | "boomera";
 
 export interface ChampDef {
   id: ChampId;
@@ -137,6 +144,8 @@ export interface ChampDef {
   /** distancia a la que le gusta pelear (IA) */
   prefer: number;
   color: string;
+  /** usa calor: el básico lo sube y a 100 se bloquea un rato */
+  heat?: boolean;
   skills: Record<Slot, SkillDef>;
 }
 
@@ -331,6 +340,64 @@ export const CHAMPS: Record<ChampId, ChampDef> = {
       x: S({ id: "mark", name: "Kunai marcado", desc: "Kunai: 10 de daño, inmoviliza 0,6 s y te teletransporta a la espalda del enemigo.", icon: "mark", cd: 10, cast: 0.2, range: 180, aim: "line", size: 4, ai: "gap" }),
       y: S({ id: "smoke", name: "Bomba de humo", desc: "Nube de 3,5 s: los aliados dentro son invisibles y los enemigos van un 30% más lentos.", icon: "smoke", cd: 13, cast: 0, range: 0, aim: "self", size: 40, ai: "defend" }),
       b: S({ id: "shadowdance", name: "Danza de las sombras", desc: "DEFINITIVA. Saltas de enemigo en enemigo 1 s: 4 tajos de 13 de daño apareciendo a su espalda. Intocable.", icon: "shadow", cd: 1, cast: 0.1, range: 160, aim: "self", size: 160, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ arquera
+  arquibot: {
+    id: "arquibot",
+    name: "Arquibot",
+    role: "Arquera",
+    desc: "Cervatilla de madera y cobre con un arco de energía. Tensa para dar en el blanco de lejos y clava a sus presas contra las columnas.",
+    hp: 170,
+    speed: 60,
+    prefer: 185,
+    color: "#c87a3a",
+    skills: {
+      r2: S({ id: "arrow", name: "Flecha cargada", desc: "Mantén para tensar el arco (vas a la mitad de velocidad) y suelta: de 7 a 21 de daño según la carga (1 s). Tensada del todo, atraviesa al primer enemigo.", icon: "bow", cd: 0.25, cast: 0, range: 290, aim: "line", size: 3, ai: "poke", charge: { max: 1, move: 0.5 } }),
+      l2: S({ id: "rain", name: "Lluvia de flechas", desc: "Marca una zona que a los 0,5 s recibe 1,5 s de flechas: 4 de daño cada 0,25 s y frena un 20%.", icon: "rain", cd: 8, cast: 0.3, range: 220, aim: "ground", size: 34, ai: "zone" }),
+      a: S({ id: "flip", name: "Voltereta", desc: "Saltas hacia atrás (lejos de donde apuntas), intocable en el aire. Tu siguiente flecha empieza medio tensada.", icon: "flip", cd: 8, cast: 0, range: 90, aim: "dash", size: 8, ai: "escape", back: true }),
+      x: S({ id: "pin", name: "Flecha clavadora", desc: "Flecha rápida de 10 de daño. Si el enemigo está a menos de 30 px de una columna o del borde, queda clavado 1,6 s; si no, va un 40% más lento 1,2 s.", icon: "pin", cd: 10, cast: 0.25, range: 230, aim: "line", size: 4, ai: "cc" }),
+      y: S({ id: "hawk", name: "Ojo de halcón", desc: "4 s: haces un 20% más de daño y revelas a los invisibles a 160 px.", icon: "hawk", cd: 14, cast: 0, range: 0, aim: "self", size: 160, ai: "defend" }),
+      b: S({ id: "stormarrow", name: "Flecha de tormenta", desc: "DEFINITIVA. Tensas 0,7 s y sueltas una flecha enorme que cruza la arena atravesando enemigos: 22 de daño +1 por cada 10 px recorridos (máx. 45).", icon: "stormarrow", cd: 1, cast: 0.7, castMove: 0.2, range: 560, aim: "line", size: 14, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ ametralladora
+  gatlinga: {
+    id: "gatlinga",
+    name: "Gatlinga",
+    role: "Ametralladora",
+    desc: "Robot rechoncho con una rotativa en el brazo. Cuanto más dispara, más rápido va... hasta que se sobrecalienta. Despliega barricadas y se ancla como una torreta.",
+    hp: 180,
+    speed: 58,
+    prefer: 140,
+    color: "#6b7a3a",
+    heat: true,
+    skills: {
+      r2: S({ id: "rotary", name: "Rotativa", desc: "Ráfaga que acelera cuanto más mantienes (de 0,28 a 0,1 s entre balas): 5 de daño por bala. Cada bala sube 4 de calor; a 100 el arma se bloquea 1,5 s mientras se enfría.", icon: "gatling", cd: 0.28, cast: 0, castMove: 0.6, range: 175, aim: "line", size: 2, ai: "poke" }),
+      l2: S({ id: "steam", name: "Purga de vapor", desc: "Cono corto de vapor: 6 de daño +1 por cada 4 de calor, empuja un poco y vacía el calor (también si estabas sobrecalentada).", icon: "steam", cd: 6, cast: 0.2, range: 60, aim: "cone", size: 60, ai: "melee" }),
+      a: S({ id: "recoil", name: "Retroceso", desc: "Disparas al suelo y sales despedida hacia atrás (contra la mira). Delante dejas un cono de 8 de daño.", icon: "recoil", cd: 9, cast: 0, range: 85, aim: "dash", size: 8, ai: "escape", back: true }),
+      x: S({ id: "barricade", name: "Barricada", desc: "Despliegas un muro de chapa perpendicular a la mira (60 de vida, 8 s) que frena robots y balas de los dos equipos.", icon: "barricade", cd: 14, cast: 0.3, range: 70, aim: "ground", size: 20, ai: "defend" }),
+      y: S({ id: "tracer", name: "Bala trazadora", desc: "Bala rápida: 6 de daño y marca 4 s. Tus golpes al marcado hacen +30% y, mientras dure, tu calor sube la mitad.", icon: "tracer", cd: 10, cast: 0.15, range: 230, aim: "line", size: 3, ai: "cc" }),
+      b: S({ id: "turretmode", name: "Modo torreta", desc: "DEFINITIVA. Te anclas 3 s (ni te mueves ni te pueden empujar): cadencia máxima sin calor y balas de 7 que atraviesan barricadas, cajas y cúpulas.", icon: "turretmode", cd: 1, cast: 0, range: 190, aim: "line", size: 4, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ bumeranes
+  boomera: {
+    id: "boomera",
+    name: "Boomera",
+    role: "Lanzadora",
+    desc: "Robot ágil con dos bumeranes de acero. Todo lo que lanza vuelve... y si lo atrapa, se lo vuelve a lanzar a la cara.",
+    hp: 170,
+    speed: 63,
+    prefer: 140,
+    color: "#2ec4b6",
+    skills: {
+      r2: S({ id: "boomerang", name: "Bumerán", desc: "Bumerán de ida y vuelta: 8 de daño a la ida y 8 a la vuelta. Si lo atrapas, puedes lanzar el siguiente al momento.", icon: "boomerang", cd: 1.4, cast: 0.15, castMove: 0.7, range: 170, aim: "line", size: 4, ai: "poke" }),
+      l2: S({ id: "chakram", name: "Chakram", desc: "Disco que rebota 3 veces en columnas, cajas y bordes: 12 de daño por impacto (tras cada rebote puede volver a golpear).", icon: "chakram", cd: 5, cast: 0.25, range: 260, aim: "line", size: 4, ai: "poke" }),
+      a: S({ id: "slide", name: "Deslizamiento", desc: "Te deslizas un poco hacia donde apuntas. Tiene 2 cargas.", icon: "slide", cd: 6, cast: 0, range: 60, aim: "dash", size: 8, ai: "escape", charges: 2 }),
+      x: S({ id: "bigboomer", name: "Gran bumerán", desc: "Bumerán enorme y lento que arrastra a los enemigos que golpea a la ida (los suelta al girar): 10 de daño a la ida y 10 a la vuelta.", icon: "bigboomer", cd: 11, cast: 0.35, range: 180, aim: "line", size: 8, ai: "cc" }),
+      y: S({ id: "perfectcatch", name: "Atrapada perfecta", desc: "Tus bumeranes en vuelo vuelven al instante y, durante 2 s, cada uno que atrapes te cura 8 y te quita 2 s de todas las recargas.", icon: "catch", cd: 8, cast: 0, range: 0, aim: "self", ai: "defend" }),
+      b: S({ id: "blades", name: "Huracán de cuchillas", desc: "DEFINITIVA. Seis bumeranes giran 3 s a tu alrededor abriéndose en espiral (de 20 a 80 px): 9 de daño en cada pasada.", icon: "blades", cd: 1, cast: 0, range: 80, aim: "self", size: 80, ai: "ult", ult: true }),
     },
   },
 };

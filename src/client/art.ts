@@ -255,6 +255,78 @@ export const ROBOT_ART: Record<string, Rig> = {
       [".....bbbb.......", ".....bb.bb......", "....ybb.ybb....."],
     ],
   },
+  // ---- tanda 1 de campeones nuevos
+  arquibot: {
+    // cervatilla de cobre y madera con arco de energía (cuerda a la izquierda, arco hacia delante)
+    pal: { W: "#8a5a2b", w: "#c89a5a", h: "#f0b878", a: "#c87a3a", A: "#8a4a1e", e: "#b8ff5f", E: "#ffffff", c: "#4a6a2a", C: "#2f4a1a", l: "#b8ff5f", L: "#e6ffd0" },
+    body: [
+      "..W...W.........",
+      "..Ww.wW.........",
+      "...WhhW....Ll...",
+      "...haaaA...L.l..",
+      "..haaaeEA..L.l..",
+      "..haaaeeA..L..l.",
+      "...AaaaA...L..l.",
+      "..ccaaaaAc.L..l.",
+      ".ccahhwwwwwwwwlE",
+      ".cCaaaaaAc.L..l.",
+      ".cCaaaaaAc.L..l.",
+      "..CaaaaaAC.L.l..",
+      "..CAAAAAAC.L.l..",
+      "...WWWWWW..Ll...",
+    ],
+    legs: [
+      ["....AA..AA......", "....WW..WW......", "...WWW.WWW......"],
+      ["...AA....AA.....", "...WW...WW......", "..WWW...WWW....."],
+      [".....AAAA.......", ".....WW.WW......", "....WWW.WWW....."],
+    ],
+  },
+  gatlinga: {
+    // rechoncha, depósito de munición a la espalda y rotativa en el brazo
+    pal: { ...METAL, h: "#a8b868", a: "#6b7a3a", A: "#4a5528", y: "#d8a820", Y: "#a07a10", r: "#ff3b4e", R: "#ffd3d8", b: "#3a3f58" },
+    body: [
+      "....hhhhhh......",
+      "...haaaaaaA.....",
+      "...haaaarRA.....",
+      "..yhaaaaaaaA....",
+      ".yYhhhhhhhhhA...",
+      "yYyaaaaaaaaaAgGG",
+      "yYyabaaaabaGgggg",
+      "yYyaaaaaaaaGbbbb",
+      "yYyabaaaabaGgggg",
+      ".yYaaaaaaaaAgGG.",
+      "...AAAAAAAAA....",
+    ],
+    legs: [
+      ["...GgG..GgG.....", "..GGGG..GGGG...."],
+      ["..GgG....GgG....", ".GGGG....GGGG..."],
+      ["....GgGGgG......", "...GGGG.GGGG...."],
+    ],
+  },
+  boomera: {
+    // ágil, antenas curvas, un bumerán a la espalda y otro en la mano
+    pal: { ...METAL, h: "#8af0e6", a: "#2ec4b6", A: "#1a7a72", y: "#ffd23f", Y: "#c08a10", e: "#ffd23f", E: "#ffffff", b: "#2a3a48" },
+    body: [
+      ".y.......y......",
+      "..y.....y.......",
+      "...yhhhhy.......",
+      "..haaaaaaA......",
+      "..haaaeEaA......",
+      "..haaaeeaA......",
+      "...AaaaaA.......",
+      "Yy..AAAA........",
+      "Yyhaaaaaah..gg..",
+      "Y.haabbaaAhgGG..",
+      "Y.haabbaaA..gG..",
+      "..haaaaaaA......",
+      "...AAAAAA.......",
+    ],
+    legs: [
+      ["....AA..AA......", "....GG..GG......", "...yGG.yGG......"],
+      ["...AA....AA.....", "...GG...GG......", "..yGG...yGG....."],
+      [".....AAAA.......", ".....GG.GG......", "....yGG.yGG....."],
+    ],
+  },
 };
 
 // =============================================================== proyectiles y objetos
@@ -295,6 +367,15 @@ export const PROJ_ART: Record<string, Art> = {
   disable: { pal: { c: "#b06aff", w: "#f0e0ff" }, rows: [".c.", "cwc", "cwc", ".c."], outline: "#2a0850" },
   ball: { pal: { a: "#3a3f58", h: "#7d8499", w: "#c9cfdc" }, rows: [".aaa.", "awhaa", "ahaaa", "aaaaa", ".aaa."] },
   log: { pal: { b: "#8a5a2b", B: "#5a3a1b", w: "#c89a5a", g: "#5fd06a" }, rows: ["...g......", ".bbbbbbbb.", "wbbbbbbbbB", "wwbbbbbbbB", ".BBBBBBBB."] },
+  // ---- tanda 1
+  arrow: { pal: { w: "#c89a5a", g: "#dfe4ee", l: "#b8ff5f" }, rows: ["l.....g.", "lwwwwwgg", "l.....g."] },
+  arrowFull: { pal: { w: "#e6ffd0", g: "#ffffff", l: "#b8ff5f" }, rows: ["ll.....g.", "llwwwwwgg", "ll.....g."], outline: "#2f6a10" },
+  arrowBig: { pal: { l: "#b8ff5f", L: "#5fa020", w: "#e6ffd0", y: "#ffffff" }, rows: ["LL.......ll..", ".LLlllllllyy.", "LLlwwwwwwwyyy", ".LLlllllllyy.", "LL.......ll.."], outline: "#1a3a08" },
+  pin: { pal: { w: "#8a5a2b", g: "#9aa0b0", r: "#ff3b4e" }, rows: ["r......", "rwwwwgg", "r......"] },
+  gbullet: { pal: { y: "#d8a820", w: "#fff6c8" }, rows: ["yw"], outline: "#4a3000" },
+  tracer: { pal: { r: "#ff3b4e", w: "#ffffff" }, rows: ["rrrww"], outline: "#5a0010" },
+  chakram: { pal: { g: "#dfe4ee", G: "#7d8499", c: "#2ec4b6" }, rows: [".ggg.", "gGcGg", "gc.cg", "gGcGg", ".ggg."] },
+  bigboomer: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["gggggg.", "gGGGGg.", "gGyyyg.", "gGy....", "gGy....", "gGy....", "ggg...."] },
   batUp: { pal: { k: "#3a1a4a", r: "#ff3b4e" }, rows: [".k.k.", "kkrkk", "k...k"] },
 };
 
@@ -377,6 +458,24 @@ export const ICONS: Record<string, Art> = {
   log: { pal: { b: "#8a5a2b", B: "#5a3a1b", w: "#c89a5a", g: "#5fd06a" }, rows: ["..........", "...g......", "..bbbbbbb.", ".wbbbbbbbB", "wBwbbbbbbB", "wwBbbbbbbB", ".wbbbbbbbB", "..BBBBBBB.", "..........", ".........."] },
   boot: { pal: { b: "#8a5a2b", B: "#5a3a1b", g: "#9aa0b0", y: "#ffd23f", o: "#ff8a2b" }, rows: ["...bbb....", "...bbB....", "...bbB....", "...bbB....", "..bbbBbb..", "..bbbbbBb.", "..BBBBBBB.", ".o.y.o....", "o.y.o.y...", ".o.o.o...."] },
 
+  // ---- tanda 1
+  bow: { pal: { l: "#b8ff5f", L: "#e6ffd0", w: "#c89a5a", g: "#dfe4ee" }, rows: ["...ll.....", "..L..l....", "..L...l...", "..L...l...", "wwwwwwwlgg", "..L...l...", "..L...l...", "..L..l....", "...ll.....", ".........."] },
+  rain: { pal: { w: "#c89a5a", g: "#dfe4ee", l: "#b8ff5f", b: "#8c6c48" }, rows: ["l...l...l.", ".w...w...w", "..w...w...", "...g...g..", ".l...l...l", "..w...w...", "...w...w..", "....g...g.", "..........", "bbbbbbbbbb"] },
+  flip: { pal: { a: "#c87a3a", A: "#8a4a1e", y: "#ffd23f" }, rows: ["...yyy....", "..y...y...", ".y.....y..", ".y...aa...", "..y..aA...", "...y.aa...", "....yaA...", "y..y.AA...", ".yy.......", ".........."] },
+  pin: { pal: { w: "#8a5a2b", g: "#9aa0b0", G: "#5a6070", r: "#ff3b4e" }, rows: ["........GG", "........GG", "r.......GG", ".wwwwwgGGG", "r.......GG", "........GG", "...r....GG", "..r.r...GG", "...r....GG", ".........."] },
+  hawk: { pal: { l: "#b8ff5f", L: "#5fa020", w: "#ffffff", k: "#17121f" }, rows: ["..........", "..llllll..", ".lL....Ll.", "lL..ww..Ll", "lL.wkkw.Ll", "lL.wkkw.Ll", "lL..ww..Ll", ".lL....Ll.", "..llllll..", ".........."] },
+  stormarrow: { pal: { l: "#b8ff5f", L: "#5fa020", w: "#ffffff", y: "#ffd23f" }, rows: ["....y.....", "...y......", "L.......l.", "LL....llll", "LLllllllww", "LL....llll", "L.......l.", "......y...", ".....y....", ".........."] },
+  gatling: { pal: { g: "#dfe4ee", G: "#7d8499", b: "#3a3f58", y: "#d8a820", a: "#6b7a3a" }, rows: ["..........", "aaa.......", "aaGgggggg.", "aaGbbbbbby", "aaGgggggg.", "aaGbbbbbby", "aaGgggggg.", "aaa.......", "..........", ".........."] },
+  steam: { pal: { w: "#ffffff", W: "#c9cfdc", G: "#7d8499" }, rows: ["......ww..", "....wWWw..", "GG.wWWWWw.", "GGwWWWWWWw", "GGWWWWWWWW", "GGwWWWWWWw", "GG.wWWWWw.", "....wWWw..", "......ww..", ".........."] },
+  recoil: { pal: { a: "#6b7a3a", A: "#4a5528", o: "#ff8a2b", y: "#ffd23f" }, rows: ["..........", ".......oy.", "aaa....yoy", "aaaa...oy.", "aAaa.....", "aaaa...oy.", "aaa....yoy", ".......oy.", "..........", ".........."] },
+  barricade: { pal: { g: "#c9cfdc", G: "#7d8499", y: "#ffd23f", k: "#17121f" }, rows: ["..........", "gggggggggg", "GykGykGykG", "gggggggggg", "GGGGGGGGGG", "gggggggggg", "GykGykGykG", "gggggggggg", ".G......G.", ".G......G."] },
+  tracer: { pal: { r: "#ff3b4e", R: "#ffd3d8", w: "#ffffff" }, rows: ["...rrrr...", "..r....r..", ".r..ww..r.", "r..wRRw..r", "rrrwRRwrrr", "r..wRRw..r", ".r..ww..r.", "..r....r..", "...rrrr...", ".........."] },
+  turretmode: { pal: { g: "#dfe4ee", G: "#7d8499", a: "#6b7a3a", y: "#d8a820" }, rows: ["..........", "...aaa....", "..aaaaGggg", "..aaaaGggy", "..aaaaGggg", "...aaa....", "...GGG....", "..G.G.G...", ".G..G..G..", "G...G...G."] },
+  chakram: { pal: { g: "#dfe4ee", G: "#7d8499", c: "#2ec4b6", w: "#ffffff" }, rows: ["...gggg...", "..gGGGGg..", ".gGcccGGg.", "gGc...cGg.", "gGc...cGw.", "gGc...cGg.", ".gGcccGg..", "..gGGGg...", "...ggg....", ".........."] },
+  slide: { pal: { a: "#2ec4b6", A: "#1a7a72", w: "#ffffff" }, rows: ["..........", "......aa..", ".....aaAa.", "a.a.aaaA..", "...aaaa...", "a.aaaa....", "..aaa.....", "w.w.w.w.w.", "..........", ".........."] },
+  bigboomer: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["gggggggg..", "gGGGGGGg..", "gGyyyyyg..", "gGy.......", "gGy.......", "gGy.......", "gGy.......", "gGy.......", "ggg.......", ".........."] },
+  catch: { pal: { y: "#ffd23f", Y: "#c08a10", a: "#2ec4b6", A: "#1a7a72", g: "#5fe08a" }, rows: ["..yyyy....", "..yYY.....", "..yY..g...", "......g...", "....ggggg.", "aa....g...", "aAa...g...", "aAAa......", ".aAAa.....", "..aa......"] },
+  blades: { pal: { y: "#ffd23f", g: "#dfe4ee", a: "#2ec4b6" }, rows: ["y...g...y.", ".y.....y..", "..........", "g...aa...g", "...aaaa...", "g...aa...g", "..........", ".y.....y..", "y...g...y.", ".........."] },
   coins: { pal: { y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" }, rows: [".yyy.", "ywyyY", "yyYyY", "yyyYY", ".YYY."] },
   medal: {
     pal: { r: "#ff5f6d", b: "#4fb4ff", y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" },

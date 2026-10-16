@@ -29,7 +29,10 @@ const DODGE = [0.1, 0.35, 0.6];
 const SKILL_USE = [0.35, 0.7, 1];
 const LEVER_USE = [0.05, 0.25, 0.5];
 /** velocidad media de proyectil para anticipar */
-const LEAD_SPEED: Record<string, number> = { revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330 };
+const LEAD_SPEED: Record<string, number> = {
+  revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330,
+  arrow: 560, rotary: 440, boomerang: 340,
+};
 
 export function botThink(w: World, f: Fighter, dt: number) {
   const b = f.bot!;
@@ -156,8 +159,15 @@ export function botThink(w: World, f: Fighter, dt: number) {
   }
   const ang = Math.atan2(ay - f.y, ax - f.x) + b.aimErr;
   const ad = Math.hypot(ax - f.x, ay - f.y);
-  f.input = { mx, my, ax: Math.cos(ang) * ad, ay: Math.sin(ang) * ad, b: b.wantB };
+  // arco: suelta la flecha al llegar a ~3/4 de carga (la decisión sólo dice "mantener")
+  let held = b.wantB;
+  if (f.charge && f.charge.t >= f.charge.max * (b.diff === 2 ? 0.8 : 0.6)) held &= ~SLOT_BIT[f.charge.slot];
+  f.input = { mx, my, ax: Math.cos(ang) * ad, ay: Math.sin(ang) * ad, b: held };
 }
+
+/** Dirección unitaria de `f` hacia `t`. */
+const dx = (t: Fighter, f: Fighter) => (t.x - f.x) / (Math.hypot(t.x - f.x, t.y - f.y) || 1);
+const dy = (t: Fighter, f: Fighter) => (t.y - f.y) / (Math.hypot(t.x - f.x, t.y - f.y) || 1);
 
 /** Rodea columnas y objetos que haya justo delante en la dirección de marcha. */
 function steer(w: World, f: Fighter, mx: number, my: number, side: number): [number, number] {
@@ -219,7 +229,8 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
   }
   const order: Slot[] = ["b", "a", "x", "y", "l2", "r2"];
   for (const slot of order) {
-    if (!w.canUse(f, slot)) continue;
+    // con calor, la cadencia acelera manteniendo: el básico se mantiene aunque esté entre dos disparos
+    if (!w.canUse(f, slot) && !(slot === "r2" && f.def.heat && f.cds.r2 < 0.3 && f.overheat <= 0)) continue;
     const s = f.def.skills[slot];
     if (slot !== "r2" && R.next() > SKILL_USE[b.diff]!) continue;
     let ok = false;
@@ -240,15 +251,22 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
         if (s.id === "fist") ok = closest < 40;
         else if ((hpk < 0.5 && closest < 75) || (closest < 40 && t.def.prefer < 40)) {
           ok = true;
-          // lejos del enemigo, hacia el centro
+          // lejos del enemigo, hacia el centro (las movilidades hacia atrás se apuntan al enemigo)
           const ex = f.x - t.x, ey = f.y - t.y, el = Math.hypot(ex, ey) || 1;
-          aim = [f.x + (ex / el) * s.range - f.x * 0.3, f.y + (ey / el) * s.range - f.y * 0.3];
+          aim = s.back ? [t.x, t.y] : [f.x + (ex / el) * s.range - f.x * 0.3, f.y + (ey / el) * s.range - f.y * 0.3];
         }
         break;
       case "defend":
         if (s.id === "sap") {
           ok = lowK < 0.7 && closest < 160;
           aim = [lowAlly.x, lowAlly.y];
+        } else if (s.id === "perfectcatch") {
+          ok = w.projs.some((p) => p.owner === f && p.ret && !p.ret.back);
+        } else if (s.id === "hawk") {
+          ok = dist < 230 && clear;
+        } else if (s.id === "barricade") {
+          ok = (threat || (dist < 170 && hpk < 0.7)) && t.def.prefer > 60;
+          aim = [f.x + (dx(t, f) * 40), f.y + (dy(t, f) * 40)];
         } else if (s.id === "firewall") {
           ok = dist < 150 && dist > 50 && hpk < 0.8 && t.def.prefer > 60;
           aim = [(f.x + t.x) / 2, (f.y + t.y) / 2];

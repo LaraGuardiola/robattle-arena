@@ -17,7 +17,7 @@ export const NO_INPUT: Input = { mx: 0, my: 0, ax: 1, ay: 0, b: 0 };
 export const ST = {
   stun: 1, root: 2, slow: 4, silence: 8, shield: 16, air: 32, stealth: 64, sleep: 128,
   counter: 256, block: 512, haste: 1024, dead: 2048, invuln: 4096, hot: 8192,
-  fear: 16384, deflect: 32768, mist: 65536, spin: 131072,
+  fear: 16384, deflect: 32768, mist: 65536, spin: 131072, anchor: 262144, mark: 524288, empower: 1048576,
 } as const;
 
 export interface FSnap {
@@ -45,6 +45,10 @@ export interface FSnap {
   cp: number;
   st: number;
   fl: number;
+  /** calor 0..100 (+1000 si está sobrecalentado); sólo campeones con calor */
+  ht?: number;
+  /** cargas por slot (-1 = la skill no usa cargas); sólo si alguna las usa */
+  am?: number[];
   /** estadísticas: daño, curación, KOs */
   dm: number;
   hl: number;
@@ -57,14 +61,16 @@ export const PR_STRIDE = 6;
 export const ZN_STRIDE = 9;
 
 export const PROJ_KINDS = ["bullet", "snipe", "shellx", "fireball", "seed", "seedHeal", "pollen", "hook", "disable", "spark",
-  "wave", "pellet", "ball", "bat", "zap", "shuriken", "kunai"] as const;
+  "wave", "pellet", "ball", "bat", "zap", "shuriken", "kunai",
+  "arrow", "arrowFull", "arrowBig", "pin", "gbullet", "tracer", "boomer", "chakram", "bigboomer"] as const;
 export const ZONE_KINDS = ["firestorm", "trap", "firewall", "bloom", "garden", "meteor", "puff", "ray",
   "lob", "turret", "dome", "smoke", "bloodmoon", "singularity", "whirl", "dance",
   // trampas de las palancas (equipo -1: dañan a todos) y columnas que suben
-  "geyser", "press", "laser", "magnet", "pulse", "rise"] as const;
+  "geyser", "press", "laser", "magnet", "pulse", "rise",
+  "rain", "blades", "hawk"] as const;
 /** Objeto con vida: [id, tipo, x, y, r, ángulo*100, vida 0..100, equipo, largo] */
 export const PP_STRIDE = 9;
-export const PROP_KINDS = ["crate"] as const;
+export const PROP_KINDS = ["crate", "barricade"] as const;
 /** Palanca: [x, y, estado (0 lista, 1 recargando, 2 bloqueada), progreso 0..100] */
 export const LV_STRIDE = 4;
 

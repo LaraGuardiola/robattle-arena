@@ -96,6 +96,7 @@ export class Renderer {
     switch (kind) {
       case "slash": case "claw": push(0.16); break;
       case "quake": push(0.35); this.burst(x + Math.cos(a) * b * 0.6, y + Math.sin(a) * b * 0.6, 14, "#8c6c48", 80, 2); this.kick(3); break;
+      case "steam": push(0.3); this.burst(x + Math.cos(a) * 25, y + Math.sin(a) * 25, 14, "#e6eef8", 90, 2); break;
       case "fist": push(0.25); this.burst(x + Math.cos(a) * 20, y + Math.sin(a) * 20, 12, "#ff8a2b", 110); break;
       case "ring": push(0.35); break;
       case "boom":
@@ -334,7 +335,7 @@ export class Renderer {
     const ctx = this.ctx;
     const def = CHAMPS[f.champ];
     const cs = f.cs >= 0 ? def.skills[SLOTS[f.cs]!] : null;
-    const casting = cs && cs.cast >= 0.25 ? cs : null;
+    const casting = cs && (cs.cast >= 0.25 || cs.charge) ? cs : null;
     const d = Math.hypot(l.ax, l.ay) || 1;
     const dx = l.ax / d, dy = l.ay / d;
     const s: SkillDef = casting ?? def.skills.r2;
@@ -490,6 +491,23 @@ export class Renderer {
       ctx.fillRect(px - 7, py - 1, 2, 2);
       ctx.fillRect(px + 5, py - 1, 2, 2);
     }
+    if (f.st & ST.anchor) {
+      // patas de anclaje clavadas en el suelo
+      ctx.fillStyle = "#17121f";
+      for (const k of [-9, 9]) ctx.fillRect(px + k - 1, py - 3, 3, 4);
+      ctx.fillStyle = "#d8a820";
+      for (const k of [-9, 9]) ctx.fillRect(px + k, py - 2, 1, 2);
+    }
+    if (f.st & ST.mark) {
+      // mira roja sobre el marcado
+      const k = Math.floor(now * 6) % 2;
+      ctx.fillStyle = "#ff3b4e";
+      ctx.fillRect(px - 4 - k, top - 6, 2, 1);
+      ctx.fillRect(px + 3 + k, top - 6, 2, 1);
+      ctx.fillRect(px, top - 10 - k, 1, 2);
+      ctx.fillRect(px, top - 3 + k, 1, 2);
+    }
+    if (f.st & ST.empower && Math.random() < 0.25) this.sparkle(f.x, f.y, "#b8ff5f", 1);
     if (f.st & ST.slow && Math.random() < 0.15) this.parts.push({ x: f.x + (Math.random() - 0.5) * 10, y: f.y, z: 10, vx: 0, vy: 0, vz: -10, life: 0.4, max: 0.4, c: "#7fe3ff", s: 1, g: 0 });
     if (f.st & ST.hot && Math.random() < 0.2) this.sparkle(f.x, f.y, "#5fe08a", 1);
     if (f.st & ST.haste && Math.random() < 0.3) this.parts.push({ x: f.x - Math.cos(face) * 6, y: f.y, z: 2, vx: 0, vy: 0, vz: 0, life: 0.25, max: 0.25, c: "#ff9ed2", s: 1, g: 0 });
@@ -516,11 +534,21 @@ export class Renderer {
     // lanzamiento
     if (f.cs >= 0) {
       const s = CHAMPS[f.champ].skills[SLOTS[f.cs]!];
-      if (s.cast >= 0.25) {
+      if (s.cast >= 0.25 || s.charge) {
         ctx.fillStyle = "#17121f";
         ctx.fillRect(px - w / 2 - 1, top + 6, w + 2, 3);
         ctx.fillStyle = "#fff6c8";
         ctx.fillRect(px - w / 2, top + 7, Math.round((w * f.cp) / 100), 1);
+      }
+    }
+    // calor (debajo de la energía): naranja, rojo parpadeante al sobrecalentarse
+    if (f.ht !== undefined) {
+      const over = f.ht >= 1000, ht = over ? f.ht - 1000 : f.ht;
+      if (ht > 0 || over) {
+        ctx.fillStyle = "#17121f";
+        ctx.fillRect(px - w / 2 - 1, top + 5, w + 2, 2);
+        ctx.fillStyle = over ? (Math.floor(performance.now() / 80) % 2 ? "#ff3b4e" : "#fff6c8") : ht > 70 ? "#ff3b4e" : "#ff8a2b";
+        ctx.fillRect(px - w / 2, top + 5, Math.max(1, Math.round((w * ht) / 100)), 1);
       }
     }
     if (tag) this.label(px, top - 6, tag, "#ffd23f");
@@ -538,6 +566,30 @@ export class Renderer {
     const ctx = this.ctx;
     const kind = PROP_KINDS[pp[i + 1]!]!, x = pp[i + 2]!, y = pp[i + 3]!, r = pp[i + 4]!, hp = pp[i + 6]! / 100;
     const px = X(x), py = Y(y);
+    if (kind === "barricade") {
+      // muro de chapa: segmento con franjas de peligro, más bajo cuanto más dañado
+      const a = pp[i + 5]! / 100, len = pp[i + 8]!;
+      const c = Math.cos(a) * len / 2, sn = Math.sin(a) * len / 2;
+      const h = 8 + Math.round(hp * 6);
+      const n = Math.max(2, Math.round(len / 3));
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, bx = X(x - c + c * 2 * t), by = Y(y - sn + sn * 2 * t);
+        ctx.fillStyle = "#17121f";
+        ctx.fillRect(bx - 2, by - h - 1, 4, h + 2);
+      }
+      for (let k = 0; k <= n; k++) {
+        const t = k / n, bx = X(x - c + c * 2 * t), by = Y(y - sn + sn * 2 * t);
+        ctx.fillStyle = k % 2 ? "#9aa0b0" : "#c9cfdc";
+        ctx.fillRect(bx - 1, by - h, 3, h);
+        ctx.fillStyle = k % 4 < 2 ? "#ffd23f" : "#17121f";
+        ctx.fillRect(bx - 1, by - h + 2, 3, 2);
+        if (hp < 0.5 && k % 3 === 1) {
+          ctx.fillStyle = "#17121f";
+          ctx.fillRect(bx, by - h + 5, 1, 2);
+        }
+      }
+      return;
+    }
     if (kind === "crate") {
       // caja de madera: tapa clara, frontal con tablas y grietas según la vida
       const w = r * 2, h = Math.round(r * 1.7), top = py - h - 2;
@@ -697,15 +749,16 @@ export class Renderer {
     }
     const spr = projSprite(kind === "bat" ? (Math.floor(now * 12 + x) % 2 ? "bat" : "batUp") : kind);
     if (kind === "ball") this.shadow(X(x), Y(y), 3);
-    if (kind === "shuriken") {
+    if (kind === "shuriken" || kind === "chakram" || kind === "boomer" || kind === "bigboomer") {
       ctx.save();
       ctx.translate(X(x), Y(y) - lift);
-      ctx.rotate(now * 22);
+      ctx.rotate(now * (kind === "bigboomer" ? 14 : 22));
       ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
       ctx.restore();
       return;
     }
-    const rot = kind === "snipe" || kind === "hook" || kind === "shellx" || kind === "fireball" || kind === "kunai" || kind === "wave";
+    const rot = kind === "snipe" || kind === "hook" || kind === "shellx" || kind === "fireball" || kind === "kunai" || kind === "wave"
+      || kind === "arrow" || kind === "arrowFull" || kind === "arrowBig" || kind === "pin" || kind === "tracer" || kind === "gbullet";
     if (rot) {
       ctx.save();
       ctx.translate(X(x), Y(y) - lift);
@@ -741,6 +794,10 @@ export class Renderer {
       trail("#7fe3ff", 0.9);
       trail("#e6fbff", 0.5);
     } else if (kind === "bat") trail("#5a2a6a", 0.3);
+    else if (kind === "arrowFull" || kind === "arrowBig") {
+      trail("#b8ff5f", 0.9);
+      if (kind === "arrowBig") trail("#ffffff", 0.7);
+    } else if (kind === "tracer") trail("#ff3b4e", 0.9);
   }
 
   // ------------------------------------------------------------ zonas
@@ -1109,6 +1166,60 @@ export class Renderer {
           ctx.globalAlpha = 1;
           break;
         }
+        case "rain": {
+          if (!armed) {
+            this.disc(px, py, r, "#b8ff5f", 0.08 + prog * 0.12);
+            ctx.strokeStyle = Math.floor(now * 10) % 2 ? "#b8ff5f" : "#5fa020";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            break;
+          }
+          this.disc(px, py, r, "#5fa020", 0.18);
+          // flechas cayendo
+          ctx.fillStyle = "#c89a5a";
+          for (let k = 0; k < 9; k++) {
+            const an = k * 2.39, rr = r * (0.2 + ((k * 37) % 10) / 12);
+            const fall = (now * 3 + k * 0.37) % 1;
+            const ax = px + Math.round(Math.cos(an) * rr), ay = py + Math.round(Math.sin(an) * rr * 0.8);
+            ctx.fillStyle = "#c89a5a";
+            ctx.fillRect(ax, ay - Math.round((1 - fall) * 40) - 6, 1, 6);
+            ctx.fillStyle = "#b8ff5f";
+            ctx.fillRect(ax, ay - Math.round((1 - fall) * 40) - 7, 1, 1);
+          }
+          break;
+        }
+        case "hawk": {
+          ctx.globalAlpha = 0.18 * Math.min(1, (1 - prog) * 6);
+          ctx.strokeStyle = "#b8ff5f";
+          ctx.setLineDash([2, 5]);
+          ctx.beginPath();
+          ctx.ellipse(px, py, r, r * 0.8, 0, now, now + TAU);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "blades": {
+          const t = prog * 3, rr = 20 + 60 * prog, base = t * 6;
+          ctx.globalAlpha = 0.3;
+          ctx.strokeStyle = "#2ec4b6";
+          ctx.beginPath();
+          ctx.ellipse(px, py, rr, rr * 0.8, 0, 0, TAU);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          const spr = projSprite("boomer");
+          for (let k = 0; k < 6; k++) {
+            const an = base + (k * TAU) / 6;
+            ctx.save();
+            ctx.translate(X(x + Math.cos(an) * rr), Y(y + Math.sin(an) * rr * 0.8) - 6);
+            ctx.rotate(now * 20);
+            ctx.drawImage(spr, -spr.width / 2, -spr.height / 2);
+            ctx.restore();
+          }
+          break;
+        }
         case "ray": {
           const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
           const w = r * (1 - prog * 0.7);
@@ -1165,10 +1276,11 @@ export class Renderer {
           break;
         }
         case "quake":
+        case "steam":
         case "fist": {
-          const half = f.kind === "quake" ? 0.62 : 0.7;
+          const half = f.kind === "quake" ? 0.62 : f.kind === "steam" ? 0.75 : 0.7;
           ctx.globalAlpha = 0.6 * (1 - k);
-          ctx.fillStyle = f.kind === "quake" ? "#c08a10" : "#ff8a2b";
+          ctx.fillStyle = f.kind === "quake" ? "#c08a10" : f.kind === "steam" ? "#e6eef8" : "#ff8a2b";
           ctx.beginPath();
           ctx.moveTo(px, py + 6);
           ctx.arc(px, py + 6, f.b * (0.4 + k * 0.6), f.a - half, f.a + half);

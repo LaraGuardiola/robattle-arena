@@ -92,7 +92,9 @@ function champHTML(id: ChampId, pad = false) {
   const c = CHAMPS[id];
   const sk = SLOTS.map((sl) => {
     const s = c.skills[sl];
-    const cd = s.ult ? "Necesita la barra de energía llena" : sl === "r2" ? "Básico · mantener" : `Recarga ${s.cd} s${s.cast ? ` · lanzamiento ${s.cast} s` : ""}`;
+    const cd = s.ult ? "Necesita la barra de energía llena"
+      : sl === "r2" ? (s.charge ? "Básico · mantener y soltar" : "Básico · mantener")
+      : `Recarga ${s.cd} s${s.charges ? ` · ${s.charges} cargas` : ""}${s.cast ? ` · lanzamiento ${s.cast} s` : ""}`;
     return `<div class="sk${s.ult ? " ult" : ""}"><img src="${iconURL(s.icon, 3)}" alt=""><div><div class="nm"><b>${keyLabel(sl, pad)}</b>${esc(s.name)}</div><div class="tx">${esc(s.desc)}</div><div class="cd">${cd}</div></div></div>`;
   }).join("");
   return `<div class="champ-head"><img src="${robotURL(id, 4)}" alt=""><div><div class="nm">${c.name} <span class="role">· ${c.role}</span></div><div class="ds">${esc(c.desc)}</div><div class="stats">Vida ${c.hp} · Velocidad ${c.speed}</div></div></div><div class="skills">${sk}</div>`;
@@ -817,11 +819,14 @@ function updateHud(s: Snap, dt: number) {
         cdEl.style.height = ready ? "0%" : `${100 - f.en}%`;
         n.textContent = ready ? "" : `${f.en}%`;
       } else {
-        cdEl.style.height = cd > 0 ? `${Math.min(100, (cd / sk.cd) * 100)}%` : "0%";
-        n.textContent = cd > 0.05 && sk.cd >= 2 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : "";
+        // skills con cargas: el número son las cargas; la recarga sólo tapa si no queda ninguna
+        const am = f.am?.[i] ?? -1;
+        const timer = cd > 0.05 && sk.cd >= 2 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : "";
+        cdEl.style.height = cd > 0 && am <= 0 ? `${Math.min(100, (cd / sk.cd) * 100)}%` : "0%";
+        n.textContent = am > 0 ? `x${am}` : timer;
       }
       el.classList.toggle("busy", f.cs === i);
-      el.classList.toggle("off", silenced && sl !== "r2");
+      el.classList.toggle("off", (silenced && sl !== "r2") || (sl === "r2" && (f.ht ?? 0) >= 1000));
     });
   }
 }

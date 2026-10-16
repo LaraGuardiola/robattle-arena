@@ -1,5 +1,6 @@
 // Genera art-preview.png con todos los sprites (para revisar el pixel art
-// sin abrir el juego).   bun tools/preview-art.ts [salida.png] [escala]
+// sin abrir el juego).   bun tools/preview-art.ts [salida.png] [escala] [nombres,separados,por,comas]
+// Con nombres sólo se dibujan esos robots, proyectiles e iconos (para revisar una tanda nueva).
 import { deflateSync } from "node:zlib";
 import { CAPSULE_ART, ICONS, PROJ_ART, ROBOT_ART } from "../src/client/art";
 import { artPixels, rigPixels, type Pixels } from "../src/client/pixels";
@@ -7,11 +8,13 @@ import { artPixels, rigPixels, type Pixels } from "../src/client/pixels";
 const out = process.argv[2] ?? "art-preview.png";
 const S = Number(process.argv[3] ?? 4);
 
+const only = process.argv[4]?.split(",");
+const pick = <T>(rec: Record<string, T>) => Object.entries(rec).filter(([k]) => !only || only.includes(k)).map(([, v]) => v);
 const rows: Pixels[][] = [
-  Object.values(ROBOT_ART).flatMap((r) => [0, 1, 2].map((i) => rigPixels(r, i))),
-  [...Object.values(PROJ_ART), CAPSULE_ART].map((a) => artPixels(a)),
-  Object.values(ICONS).map((a) => artPixels(a)),
-];
+  pick(ROBOT_ART).flatMap((r) => [0, 1, 2].map((i) => rigPixels(r, i))),
+  [...pick(PROJ_ART), ...(only ? [] : [CAPSULE_ART])].map((a) => artPixels(a)),
+  pick(ICONS).map((a) => artPixels(a)),
+].filter((r) => r.length);
 
 const GAP = 3;
 const W = Math.max(...rows.map((r) => r.reduce((a, p) => a + p.w + GAP, GAP)));

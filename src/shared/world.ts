@@ -97,6 +97,32 @@ export interface Fighter {
   comboT: number;
   flash: number;
   lastHitBy: Fighter | null;
+  /** cargando una skill de "carga al soltar" */
+  charge: { slot: Slot; t: number; max: number } | null;
+  /** potencia de la última carga soltada (0..1): la lee la skill */
+  chargeK: number;
+  /** carga ya ganada para la próxima (0..1) */
+  preCharge: number;
+  /** calor 0..100; a 100 se bloquea el básico `overheat` segundos */
+  heat: number;
+  overheat: number;
+  /** segundos sin disparar (el calor baja pasado un momento) */
+  heatIdle: number;
+  /** segundos seguidos disparando (cadencia que acelera) */
+  ramp: number;
+  /** cargas que le quedan a las skills con `charges` */
+  ammo: Partial<Record<Slot, number>>;
+  ammoLock: number;
+  /** daño potenciado: +dmgUpK durante dmgUp segundos */
+  dmgUp: number;
+  dmgUpK: number;
+  /** marcado por `markBy`: sus golpes le hacen +30% */
+  markT: number;
+  markBy: Fighter | null;
+  /** anclado: no se mueve ni se le puede empujar */
+  anchor: number;
+  /** ventana de Atrapada perfecta */
+  catchBuff: number;
   stats: { dmg: number; heal: number; kos: number };
   bot: Bot | null;
 }
@@ -120,6 +146,14 @@ export interface Proj {
   hit: Set<number>;
   onHit: (w: World, t: Fighter, p: Proj) => void;
   onEnd?: (w: World, p: Proj) => void;
+  /** vuelve al dueño al agotar el alcance o chocar (bumerán); onCatch si lo atrapa */
+  ret?: { back: boolean; t: number; onCatch?: (w: World, p: Proj) => void };
+  /** rebotes que le quedan en columnas, objetos y borde */
+  bounces: number;
+  /** atraviesa objetos (barricadas, cajas), cúpulas y muros de fuego */
+  ghost: boolean;
+  /** robots que arrastra consigo (gran bumerán) */
+  carry: Fighter[];
   dead: boolean;
 }
 
@@ -271,6 +305,8 @@ export class World {
         stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, slowK: 0, haste: 0, hasteK: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
         fear: 0, fearX: 0, fearY: 0, deflect: 0, mist: 0, spin: 0, lock: 0, chan: { t: 0, target: null },
         shield: 0, shieldT: 0, hots: [], stormAcc: 0, motion: null, bonus: 0, combo: 0, comboT: 0, flash: 0, lastHitBy: null,
+        charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammo: {}, ammoLock: 0,
+        dmgUp: 0, dmgUpK: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
         stats: { dmg: 0, heal: 0, kos: 0 },
         bot: s.human ? null : { diff: s.diff ?? 1, think: 0, strafe: this.rng.next() < 0.5 ? 1 : -1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 },
       };
@@ -298,9 +334,15 @@ export class World {
         stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, haste: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
         fear: 0, deflect: 0, mist: 0, spin: 0, lock: 0,
         shield: 0, shieldT: 0, hots: [], bonus: 0, combo: 0, flash: 0, lastHitBy: null, face: f.team ? Math.PI : 0,
+        charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammoLock: 0,
+        dmgUp: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
       });
       // la energía se conserva entre rondas (como en Battlerite), las recargas no
-      for (const s of SLOTS) f.cds[s] = 0;
+      for (const s of SLOTS) {
+        f.cds[s] = 0;
+        const n = f.def.skills[s].charges;
+        if (n) f.ammo[s] = n;
+      }
     }
     this.projs = [];
     this.zones = [];
@@ -551,8 +593,12 @@ export class World {
 
   canUse(f: Fighter, slot: Slot) {
     const s = f.def.skills[slot];
-    if (f.cds[slot] > 0) return false;
+    if (s.charges) {
+      if (!f.ammo[slot] || f.ammoLock > 0) return false;
+    } else if (f.cds[slot] > 0) return false;
     if (s.ult && f.energy < ENERGY_MAX) return false;
+    if (slot === "r2" && f.overheat > 0) return false;
+    if (slot !== "r2" && f.anchor > 0) return false;
     if (slot !== "r2" && f.silence > 0) return false;
     if ((s.aim === "dash" || s.id === "blink" || s.id === "meteor") && f.root > 0) return false;
     return true;
@@ -560,12 +606,23 @@ export class World {
 
   updateFighter(f: Fighter, dt: number) {
     // ---- estados
-    const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block" | "fear" | "deflect" | "mist" | "spin" | "lock") => {
+    const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block" | "fear" | "deflect" | "mist" | "spin" | "lock"
+      | "overheat" | "ammoLock" | "dmgUp" | "markT" | "anchor" | "catchBuff") => {
       if (f[k] > 0) f[k] = Math.max(0, f[k] - dt);
     };
     dec("stun"); dec("root"); dec("silence"); dec("sleep"); dec("slow"); dec("haste");
     dec("invuln"); dec("stealth"); dec("counter"); dec("block");
     dec("fear"); dec("deflect"); dec("mist"); dec("spin"); dec("lock");
+    dec("overheat"); dec("ammoLock"); dec("dmgUp"); dec("markT"); dec("anchor"); dec("catchBuff");
+    if (f.def.heat) {
+      f.heatIdle += dt;
+      // sobrecalentado: el arma se enfría del todo mientras dura el bloqueo
+      if (f.overheat > 0) f.heat = (100 * f.overheat) / 1.5;
+      else if (f.heatIdle > 0.35) {
+        f.heat = Math.max(0, f.heat - 32 * dt);
+        f.ramp = 0;
+      }
+    }
     if (f.shieldT > 0) {
       f.shieldT -= dt;
       if (f.shieldT <= 0) f.shield = 0;
@@ -585,7 +642,16 @@ export class World {
       }
     }
     f.hots = f.hots.filter((h) => h.t > 0);
-    for (const s of SLOTS) if (f.cds[s] > 0) f.cds[s] = Math.max(0, f.cds[s] - dt);
+    for (const s of SLOTS) {
+      if (f.cds[s] <= 0) continue;
+      f.cds[s] = Math.max(0, f.cds[s] - dt);
+      // las skills con cargas reponen una cada recarga
+      const n = f.def.skills[s].charges;
+      if (n && f.cds[s] <= 0 && (f.ammo[s] ?? 0) < n) {
+        f.ammo[s] = (f.ammo[s] ?? 0) + 1;
+        if (f.ammo[s]! < n) f.cds[s] = f.def.skills[s].cd;
+      }
+    }
     if (this.phase === "fight") f.energy = Math.min(ENERGY_MAX, f.energy + ENERGY_REGEN * dt);
 
     this.updateFace(f);
@@ -593,6 +659,7 @@ export class World {
     // ---- movimiento forzado (cargas, saltos, empujones)
     const m = f.motion;
     if (m) {
+      f.charge = null;
       const k = Math.min(dt, m.t);
       m.t -= dt;
       const nx = f.x + m.vx * k, ny = f.y + m.vy * k;
@@ -640,6 +707,20 @@ export class World {
       }
     }
 
+    // ---- carga al soltar (arco): se dispara al soltar el botón
+    if (f.charge) {
+      const c = f.charge;
+      if (!this.canAct(f) || this.phase !== "fight" || (c.slot !== "r2" && f.silence > 0)) f.charge = null;
+      else {
+        c.t = Math.min(c.max, c.t + dt);
+        if (!(f.input.b & SLOT_BIT[c.slot])) {
+          f.chargeK = c.t / c.max;
+          f.charge = null;
+          this.fire(f, c.slot);
+        }
+      }
+    }
+
     // ---- elegir skill (botones mantenidos + un pequeño búfer para toques cortos)
     const b = f.input.b, pressed = b & ~f.prevB;
     f.prevB = b;
@@ -652,7 +733,7 @@ export class World {
       f.bufferT -= dt;
       if (f.bufferT <= 0) f.buffer = null;
     }
-    if (this.phase === "fight" && !f.cast && this.canAct(f)) {
+    if (this.phase === "fight" && !f.cast && !f.charge && this.canAct(f)) {
       const order: Slot[] = ["b", "a", "x", "y", "l2", "r2"];
       let use: Slot | null = null;
       if (f.buffer && this.canUse(f, f.buffer)) use = f.buffer;
@@ -666,6 +747,8 @@ export class World {
     if (f.slow > 0) sp *= 1 - f.slowK;
     if (f.haste > 0) sp *= 1 + f.hasteK;
     if (f.cast) sp *= f.def.skills[f.cast.slot].castMove;
+    if (f.charge) sp *= f.def.skills[f.charge.slot].charge!.move;
+    if (f.anchor > 0) sp = 0;
     if (f.block > 0) sp *= 0.5;
     if (f.spin > 0) sp *= 0.75;
     let { mx, my } = f.input;
@@ -692,11 +775,18 @@ export class World {
   startCast(f: Fighter, slot: Slot) {
     const s = f.def.skills[slot];
     if (f.buffer === slot) f.buffer = null;
-    f.cds[slot] = s.cd;
+    if (s.charges) {
+      f.ammo[slot] = (f.ammo[slot] ?? 1) - 1;
+      f.ammoLock = 0.3;
+      if (f.cds[slot] <= 0) f.cds[slot] = s.cd;
+    } else f.cds[slot] = s.cd;
     if (s.ult) f.energy = 0;
     if (s.id !== "stealth") f.stealth = 0;
     f.chan = { t: 0, target: null };
-    if (s.cast > 0) {
+    if (s.charge) {
+      f.charge = { slot, t: f.preCharge * s.charge.max, max: s.charge.max };
+      f.preCharge = 0;
+    } else if (s.cast > 0) {
       f.cast = { slot, t: 0, total: s.cast };
       if (s.cast >= 0.3) this.sfx("charge");
     } else this.fire(f, slot);
@@ -792,6 +882,8 @@ export class World {
         }
       }
     }
+    if (src && src.dmgUp > 0) amt *= 1 + src.dmgUpK;
+    if (src && t.markT > 0 && t.markBy === src) amt *= 1.3;
     amt = Math.round(amt);
     let left = amt;
     if (t.shield > 0) {
@@ -847,6 +939,31 @@ export class World {
     this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, SHIELD_POPUP);
   }
 
+  /** Sube el calor; a 100 se sobrecalienta y bloquea el básico. */
+  addHeat(f: Fighter, amt: number) {
+    f.heatIdle = 0;
+    if (f.overheat > 0) return;
+    f.heat = Math.min(100, f.heat + amt);
+    if (f.heat >= 100) {
+      f.overheat = 1.5;
+      f.heat = 100;
+      f.ramp = 0;
+      this.popup(f.x, f.y - 26, "¡SOBRECALENTADO!", "#ff8a2b");
+      this.sfx("overheat");
+    }
+  }
+
+  /** ¿Hay columna, objeto sólido o borde a menos de `m` px? */
+  nearWall(x: number, y: number, m: number) {
+    if (Math.hypot(x / (ARENA_RX - m), y / (ARENA_RY - m)) > 1) return true;
+    if (this.pillars.some((p) => dist2(p.x, p.y, x, y) < (p.r + m) ** 2)) return true;
+    return this.props.some((p) => {
+      if (!p.solid || p.dead) return false;
+      const [qx, qy] = this.propPoint(p, x, y);
+      return dist2(qx, qy, x, y) < (p.r + m) ** 2;
+    });
+  }
+
   stun(t: Fighter, d: number) {
     if (!this.ccable(t)) return;
     t.stun = Math.max(t.stun, d);
@@ -881,7 +998,7 @@ export class World {
 
   /** Empuja a un robot (interrumpe lo que esté lanzando). */
   knock(t: Fighter, dx: number, dy: number, dist: number, dur = 0.22, slam?: () => void) {
-    if (!this.ccable(t)) return;
+    if (!this.ccable(t) || t.anchor > 0) return;
     const l = Math.hypot(dx, dy) || 1;
     t.cast = null;
     t.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: false, knock: true, h: 0, hit: new Set(), slam };
@@ -1015,11 +1132,16 @@ export class World {
   }
 
   // ============================================================ proyectiles
-  proj(f: Fighter, o: { kind: Proj["kind"]; dx: number; dy: number; speed: number; range: number; r?: number; dmg?: number; allies?: boolean; pierce?: boolean; onHit: Proj["onHit"]; onEnd?: Proj["onEnd"]; from?: [number, number] }) {
+  proj(f: Fighter, o: {
+    kind: Proj["kind"]; dx: number; dy: number; speed: number; range: number; r?: number; dmg?: number; allies?: boolean; pierce?: boolean;
+    onHit: Proj["onHit"]; onEnd?: Proj["onEnd"]; from?: [number, number];
+    ret?: boolean; onCatch?: (w: World, p: Proj) => void; bounces?: number; ghost?: boolean;
+  }) {
     const [sx, sy] = o.from ?? [f.x + o.dx * 6, f.y + o.dy * 6];
     const p: Proj = {
       id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: sx, y: sy, vx: o.dx * o.speed, vy: o.dy * o.speed, r: o.r ?? 3,
-      dist: o.range, orbDmg: o.dmg ?? 0, allies: !!o.allies, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit, onEnd: o.onEnd, dead: false,
+      dist: o.range, orbDmg: o.dmg ?? 0, allies: !!o.allies, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit, onEnd: o.onEnd,
+      ret: o.ret ? { back: false, t: 0, onCatch: o.onCatch } : undefined, bounces: o.bounces ?? 0, ghost: !!o.ghost, carry: [], dead: false,
     };
     this.projs.push(p);
     return p;
@@ -1032,9 +1154,28 @@ export class World {
       const steps = Math.max(1, Math.ceil((sp * dt) / 5));
       const sdt = dt / steps;
       for (let k = 0; k < steps && !p.dead; k++) {
+        // bumerán de vuelta: persigue al dueño y, si llega, lo atrapa
+        const back = p.ret?.back;
+        if (back) {
+          const o = p.owner, dx = o.x - p.x, dy = o.y - 4 - p.y, d = Math.hypot(dx, dy);
+          p.ret!.t += sdt;
+          if (o.dead || p.ret!.t > 3) {
+            p.dead = true;
+            break;
+          }
+          if (d < 10) {
+            p.dead = true;
+            p.ret!.onCatch?.(this, p);
+            break;
+          }
+          p.vx = (dx / d) * sp;
+          p.vy = (dy / d) * sp;
+        }
         p.x += p.vx * sdt;
         p.y += p.vy * sdt;
         p.dist -= sp * sdt;
+        // arrastra a los que ha enganchado (sólo a la ida)
+        for (const e of p.carry) if (!e.dead && this.ccable(e) && e.anchor <= 0) this.moveTo(e, p.x, p.y + 4, true);
         // robots
         for (const e of this.fighters) {
           if (e.dead || p.hit.has(e.id) || e === p.owner) continue;
@@ -1048,6 +1189,7 @@ export class World {
             p.team = e.team;
             p.owner = e;
             p.hit = new Set([e.id]);
+            p.carry = [];
             p.dist = Math.max(p.dist, 160);
             this.fx("deflect", p.x, p.y, Math.atan2(p.vy, p.vx), 0);
             this.sfx("block");
@@ -1056,54 +1198,63 @@ export class World {
           }
           p.hit.add(e.id);
           p.onHit(this, e, p);
-          if (!p.pierce) {
+          if (!p.pierce && !p.ret) {
             p.dead = true;
             break;
           }
         }
         if (p.dead) break;
+        if (back) continue; // a la vuelta atraviesa todo lo demás
         // orbe
         if (this.orb && dist2(this.orb.x, this.orb.y - 4, p.x, p.y) < (9 + p.r) ** 2) {
           if (p.orbDmg) this.hitOrb(p.owner, p.orbDmg);
+          if (this.turnBack(p)) continue;
           p.dead = true;
           p.onEnd?.(this, p);
           break;
         }
-        // pilares, muros de fuego, borde
-        let hitWall = this.pillars.some((q) => dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2);
-        if (!hitWall)
-          for (const q of this.props) {
-            if (q.dead || !q.stopsProj) continue;
-            const [qx, qy] = this.propPoint(q, p.x, p.y);
-            if (dist2(qx, qy, p.x, p.y) < (q.r + p.r) ** 2) {
-              hitWall = true;
-              this.hurtProp(q, p.orbDmg || 6);
-              break;
-            }
-          }
-        if (!hitWall && this.hitLever(p.x, p.y, p.r, p.owner)) hitWall = true;
-        if (!hitWall)
+        // columnas, objetos y borde: rebotan; cúpulas, muros de fuego y palancas: frenan
+        const n = this.wallNormal(p);
+        let stop = false;
+        if (!n && !p.ghost && this.hitLever(p.x, p.y, p.r, p.owner)) stop = true;
+        if (!n && !stop && !p.ghost)
           for (const z of this.zones)
             if (z.dome && z.armed && z.team !== p.team) {
               const now = dist2(p.x, p.y, z.x, z.y), before = dist2(p.x - p.vx * sdt, p.y - p.vy * sdt, z.x, z.y);
               if (now <= z.r * z.r && before > z.r * z.r) {
-                hitWall = true;
+                stop = true;
                 this.fx("spark", p.x, p.y, 0, 0);
                 this.sfx("orbhit");
                 break;
               }
             }
-        if (!hitWall)
+        if (!n && !stop && !p.ghost)
           for (const z of this.zones)
             if (z.wall && z.armed && z.team !== p.team) {
               const c = Math.cos(z.a + Math.PI / 2) * z.len / 2, s = Math.sin(z.a + Math.PI / 2) * z.len / 2;
               if (segDist2(p.x, p.y, z.x - c, z.y - s, z.x + c, z.y + s) < (p.r + 3) ** 2) {
-                hitWall = true;
+                stop = true;
                 this.fx("spark", p.x, p.y, 0, 0);
                 break;
               }
             }
-        if (hitWall || p.dist <= 0 || (p.x / ARENA_RX) ** 2 + (p.y / ARENA_RY) ** 2 > 1.02) {
+        if (n && p.bounces > 0) {
+          // rebote: refleja la velocidad respecto a la normal y vuelve a poder golpear
+          p.x -= p.vx * sdt;
+          p.y -= p.vy * sdt;
+          const dot = p.vx * n[0] + p.vy * n[1];
+          if (dot < 0) {
+            p.vx -= 2 * dot * n[0];
+            p.vy -= 2 * dot * n[1];
+          }
+          p.bounces--;
+          p.hit.clear();
+          this.fx("spark", p.x, p.y, 0, 0);
+          this.sfx("ricochet");
+          continue;
+        }
+        if (n || stop || p.dist <= 0) {
+          if (this.turnBack(p)) continue;
           p.dead = true;
           if (p.onEnd) p.onEnd(this, p);
           else this.fx("spark", p.x, p.y, 0, 0);
@@ -1111,6 +1262,35 @@ export class World {
       }
     }
     this.projs = this.projs.filter((p) => !p.dead);
+  }
+
+  /** Bumerán: al chocar o agotar el alcance da la vuelta (suelta lo que arrastra). */
+  turnBack(p: Proj) {
+    if (!p.ret || p.ret.back) return false;
+    p.ret.back = true;
+    p.hit.clear();
+    p.carry = [];
+    return true;
+  }
+
+  /** Normal de la superficie con la que choca el proyectil (columna, objeto o borde), o null. */
+  wallNormal(p: Proj): [number, number] | null {
+    const unit = (x: number, y: number): [number, number] => {
+      const l = Math.hypot(x, y) || 1;
+      return [x / l, y / l];
+    };
+    for (const q of this.pillars) if (dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2) return unit(p.x - q.x, p.y - q.y);
+    if (!p.ghost)
+      for (const q of this.props) {
+        if (q.dead || !q.stopsProj) continue;
+        const [qx, qy] = this.propPoint(q, p.x, p.y);
+        if (dist2(qx, qy, p.x, p.y) < (q.r + p.r) ** 2) {
+          this.hurtProp(q, p.orbDmg || 6);
+          return unit(p.x - qx, p.y - qy);
+        }
+      }
+    if ((p.x / ARENA_RX) ** 2 + (p.y / ARENA_RY) ** 2 > 1.02) return unit(-p.x / ARENA_RX ** 2, -p.y / ARENA_RY ** 2);
+    return null;
   }
 
   // ============================================================ zonas
@@ -1207,14 +1387,21 @@ export class World {
       if (a.mist > 0) st |= ST.mist;
       if (a.spin > 0) st |= ST.spin;
       if (a.hots.length) st |= ST.hot;
-      return {
+      if (a.anchor > 0) st |= ST.anchor;
+      if (a.markT > 0) st |= ST.mark;
+      if (a.dmgUp > 0) st |= ST.empower;
+      const cs = a.cast ? SLOTS.indexOf(a.cast.slot) : a.charge ? SLOTS.indexOf(a.charge.slot) : -1;
+      const cp = a.cast ? Math.round((a.cast.t / a.cast.total) * 100) : a.charge ? Math.round((a.charge.t / a.charge.max) * 100) : 0;
+      const snap: FSnap = {
         id: a.id, name: a.name, champ: a.champ, team: a.team, human: a.human,
         x: Math.round(a.x * 10) / 10, y: Math.round(a.y * 10) / 10, z: Math.round(a.z), face: Math.round(a.face * 100), mv: a.moving,
         hp: Math.ceil(a.hp), maxHp: a.maxHp, sh: Math.ceil(a.shield), en: Math.floor(a.energy),
         cd: SLOTS.map((s) => Math.ceil(a.cds[s] * 10)),
-        cs: a.cast ? SLOTS.indexOf(a.cast.slot) : -1, cp: a.cast ? Math.round((a.cast.t / a.cast.total) * 100) : 0,
-        st, fl: a.flash > 0 ? 1 : 0, dm: a.stats.dmg, hl: Math.round(a.stats.heal), ko: a.stats.kos,
+        cs, cp, st, fl: a.flash > 0 ? 1 : 0, dm: a.stats.dmg, hl: Math.round(a.stats.heal), ko: a.stats.kos,
       };
+      if (a.def.heat) snap.ht = Math.round(a.heat) + (a.overheat > 0 ? 1000 : 0);
+      if (SLOTS.some((sl) => a.def.skills[sl].charges)) snap.am = SLOTS.map((sl) => (a.def.skills[sl].charges ? a.ammo[sl] ?? 0 : -1));
+      return snap;
     });
     const pr: number[] = [];
     for (const p of this.projs) pr.push(p.id, PROJ_KINDS.indexOf(p.kind), Math.round(p.x), Math.round(p.y), Math.round(Math.atan2(p.vy, p.vx) * 100), p.team);
