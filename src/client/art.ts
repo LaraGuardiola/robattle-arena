@@ -1,0 +1,347 @@
+// Todo el pixel art del juego, dibujado como mapas de caracteres.
+// Cada letra es un color de la paleta del sprite; '.' es transparente.
+// El contorno oscuro lo añade el constructor (sprites.ts) automáticamente.
+//
+// Los robots miran a la derecha; para la izquierda se voltean.
+// Cuerpo + piernas van por separado: así cada robot tiene 3 poses de piernas
+// (quieto, paso A, paso B) sin redibujar todo el cuerpo.
+
+export type Pal = Record<string, string>;
+export interface Art {
+  pal: Pal;
+  rows: string[];
+  outline?: string | null;
+}
+export interface Rig {
+  pal: Pal;
+  body: string[];
+  legs: string[][];
+}
+
+export const OUTLINE = "#17121f";
+
+const METAL = { g: "#dfe4ee", G: "#7d8499", k: OUTLINE, w: "#ffffff" };
+
+// =============================================================== robots jugables
+export const ROBOT_ART: Record<string, Rig> = {
+  beetlix: {
+    pal: { ...METAL, h: "#fff07a", a: "#ffc928", A: "#d4831a", e: "#3fe07a", E: "#d8ffe4", b: "#555b78", B: "#363a52", y: "#ff5f6d" },
+    body: [
+      "......hh........",
+      ".....haA........",
+      "....haA.....k...",
+      "...haaA....kg...",
+      "..haaaaaaa.k....",
+      ".haaaaaaaaAk....",
+      ".haeeEEeeaAA....",
+      ".haeeeeeeaAA....",
+      "..AaaaaaaAA.....",
+      "..gGGbbbbGGg....",
+      ".gGgbbyybbgGgggw",
+      ".gGgbbyybBgGGGGG",
+      "..gGbbbbBBGg....",
+      "....BBBBBB......",
+    ],
+    legs: [
+      ["....GG..GG......", "....GG..GG......", "...GGG.GGG......"],
+      ["...GG....GG.....", "...GG...GG......", "..GGG...GGG.....", ],
+      [".....GGGG.......", ".....GG.GG......", "....GGG.GGG.....", ],
+    ],
+  },
+  sawkuwa: {
+    pal: { ...METAL, h: "#cfc6ff", a: "#8a7bff", A: "#5140c4", e: "#ff5f6d", E: "#ffd3d8", b: "#3c3f58", B: "#25273a", y: "#ffd23f", c: "#7fe3ff", C: "#e6fbff" },
+    body: [
+      "..A......A......",
+      "..aA....aA......",
+      "...aA..aA.......",
+      "...haaaaa.......",
+      "..haaaaaaaA.....",
+      ".haeeeeeaaA.....",
+      ".haeEEeeaaAA....",
+      ".haaaaaaaaAA...C",
+      "..AaaaaaaAA...Cc",
+      "..gGGbbbbGGg.Cc.",
+      ".gGgbbyybbgGCc..",
+      ".gGgbbyybBgGgG..",
+      "..gGbbbbBBGg....",
+      "....BBBBBB......",
+    ],
+    legs: [
+      ["....AA..AA......", "....GG..GG......", "...GGG.GGG......"],
+      ["...AA....AA.....", "...GG...GG......", "..GGG...GGG....."],
+      [".....AAAA.......", ".....GG.GG......", "....GGG.GGG....."],
+    ],
+  },
+  nekobot: {
+    pal: { ...METAL, h: "#ffe0f1", a: "#ff9ed2", A: "#d0569a", e: "#3fd7ff", E: "#ffffff", y: "#ff5f6d", b: "#f4f4ff", B: "#b9bdd6", c: "#ff3b6b" },
+    body: [
+      "..aA.....aA.....",
+      "..ahA...ahA.....",
+      "..aahaaaaaA.....",
+      "..haaaaaaaaA....",
+      ".haaEeaaEeaA....",
+      ".haaeeaaeeaA....",
+      ".haaaayyaaaA....",
+      "..AaaaaaaaA.....",
+      "...AAAAAAA......",
+      "..gGbbbbbGg.....",
+      ".gGgbbaabbgGgggc",
+      ".gGgbbbbbBgGGGGG",
+      "..gGbbbbBBGg....",
+      "....BBBBBB..aa..",
+    ],
+    legs: [
+      ["....bb..bb...a..", "....BB..BB......", "...aBB.aBB......"],
+      ["...bb....bb.a...", "...BB...BB......", "..aBB...aBB....."],
+      [".....bbbb....a..", ".....BB.BB......", "....aBB.aBB....."],
+    ],
+  },
+  tanker: {
+    pal: { ...METAL, h: "#c6f7ae", a: "#5fd06a", A: "#2f8a4a", e: "#ffd23f", E: "#fff6c8", s: "#8a5a2b", S: "#5a3a1b" },
+    body: [
+      ".....hhhh.......",
+      "....haaaaA......",
+      "...haeeEeaA.....",
+      "...haeeeeaA.....",
+      "...AaaaaaaA.....",
+      ".hhhhhhhhhhh....",
+      "hasaasaasaaaA...",
+      "haSaaSaaSaaaAgGG",
+      "haaaaaaaaaaaAGGG",
+      ".AAAAAAAAAAAA...",
+    ],
+    legs: [
+      [".gGgGgGgGgGgG...", ".GgGgGgGgGgGg...", "..kkkkkkkkkkk..."],
+      [".GgGgGgGgGgGg...", ".gGgGgGgGgGgG...", "..kkkkkkkkkkk..."],
+      [".gGgGgGgGgGgG...", ".GgGgGgGgGgGg...", "..kkkkkkkkkkk..."],
+    ],
+  },
+  merlix: {
+    pal: { ...METAL, a: "#6a4cc8", A: "#3e2a8a", h: "#9d84ff", y: "#ffd23f", b: "#c9d6ff", B: "#7f93c9", e: "#3fd7ff", E: "#ffffff", c: "#ffd23f", o: "#b06aff", O: "#ffffff", S: "#8a5a2b" },
+    body: [
+      "......aA........",
+      ".....aaA........",
+      ".....ayaA.......",
+      "....aaaaaA......",
+      "...aaaaaaaA.....",
+      "..hhhhhhhhhh....",
+      "...bbeeEebB...o.",
+      "...bEeeeebB..oOo",
+      "...bbbbbbbB...o.",
+      "..aaacccaaA...S.",
+      ".aaaaacaaaaA.S..",
+      ".aAaaacaaaAAS...",
+      "..aaaacaaaA.S...",
+      "..AaaaaaaaASS...",
+    ],
+    legs: [
+      ["...cAAAAAc......", "....G...G......."],
+      ["...cAAAAAc......", "...G.....G......"],
+      ["...cAAAAAc......", ".....G.G........"],
+    ],
+  },
+  florak: {
+    pal: { l: "#5fd06a", L: "#2f8a4a", b: "#8a5a2b", B: "#5a3a1b", w: "#c89a5a", e: "#3fe07a", a: "#9fffb0", A: "#3fe07a", f: "#ff7bd5" },
+    body: [
+      "...l.l..l.l.....",
+      "...lLl..lLl.....",
+      "....lLflLl......",
+      ".....bbbbb......",
+      "....bwwwwbB.....",
+      "....bweewbB.....",
+      "....bwwwwbB.....",
+      "...llbbbbbll....",
+      "..lLlbbbbblLl...",
+      "..lLbbaaabbLl..l",
+      "...LbbaAabbL..lL",
+      "....bbbbbbBbbbL.",
+      "....BbbbbbB.....",
+    ],
+    legs: [
+      ["....bB..bB......", "...bbB..bbB.....", "..bB......bB...."],
+      ["...bB....bB.....", "...bB....bB.....", "..bbB....bbB...."],
+      [".....bBbB.......", ".....bB.bB......", "....bbB.bbB....."],
+    ],
+  },
+  vladbot: {
+    pal: { k: "#2a1a3a", a: "#5a4a7a", h: "#8a7aa8", r: "#ff3b4e", w: "#ffffff", c: "#8a1a3a", C: "#c02a4a" },
+    body: [
+      "...k......k.....",
+      "...kk....kk.....",
+      "...khhhhhhk.....",
+      "..khaaaaaaak....",
+      "..kaarraarrak...",
+      "..kaaaaaaaak....",
+      "...kawwwwak.....",
+      "cc.kkaaaakk.cc..",
+      "cCchaarraaacCc..",
+      "cCCaaaaaaaaCCc..",
+      "cCCcaaaaaacCCc..",
+      ".cCcaaaaaacCc...",
+      "..cc.aaaa.cc....",
+    ],
+    legs: [
+      ["....kk..kk......", "....kk..kk......", "...kkk.kkk......"],
+      ["...kk....kk.....", "...kk...kk......", "..kkk...kkk....."],
+      [".....kkkk.......", ".....kk.kk......", "....kkk.kkk....."],
+    ],
+  },
+  nexus: {
+    pal: { ...METAL, a: "#e6eef8", A: "#9fb1c9", e: "#3fd7ff", E: "#ffffff", c: "#3fffb0", y: "#ffd23f", h: "#3fd7ff", H: "#bff6ff" },
+    body: [
+      "......y.........",
+      "......g.........",
+      "....aaaaaa......",
+      "...aeeeeeeA.....",
+      "...aEeeeeeA..hhh",
+      "...aaaaaaaA..hHh",
+      "....AAAAAA...hhh",
+      "..gGaaaaaaGg..h.",
+      ".gGgaacccaagGg..",
+      ".gGgaccyccagGg..",
+      "..gGaacccaaGg...",
+      "....aaaaaaA.....",
+      "....AAAAAAA.....",
+    ],
+    legs: [
+      ["....GG..GG......", "...GccG.GccG....", "...GGGG.GGGG...."],
+      ["....GG..GG......", "...GCCG.GCCG....", "...GGGG.GGGG...."],
+      ["....GG..GG......", "...GccG.GccG....", "...GGGG.GGGG...."],
+    ],
+  },
+  shinobot: {
+    pal: { k: "#1a1a2e", a: "#2e3150", A: "#1e2038", e: "#ff3b4e", r: "#ff3b4e", R: "#b02a3a", g: "#7d8499", b: "#c9cfdc", s: "#dfe4ee", S: "#8a5a2b" },
+    body: [
+      "......kkk.......",
+      "....kkkkkkk.....",
+      "...kaaaaaaak..s.",
+      "...kaeeeeeak.s..",
+      "...kaaaaaaaks...",
+      "....kaaaaakS....",
+      "..rrrrrrrrr.....",
+      "...rRaaaaaR.r...",
+      "..gaaaabaaaag.rr",
+      ".gaaaabbbaaaag..",
+      "..gaaaabaaaag...",
+      "....aaaaaaa.....",
+      "....AAAAAAA.....",
+    ],
+    legs: [
+      ["....aa..aa......", "....AA..AA......", "...AAA.AAA......"],
+      ["...aa....aa.....", "...AA...AA......", "..AAA...AAA....."],
+      [".....aaaa.......", ".....AA.AA......", "....AAA.AAA....."],
+    ],
+  },
+  coltron: {
+    pal: { h: "#8a5a2b", H: "#5a3a1b", a: "#c9cfdc", A: "#7d8499", e: "#ffd23f", m: "#3a2a10", p: "#c0392b", P: "#ffd23f", g: "#9aa0b0", G: "#5a6070", b: "#5a3a1b", y: "#ffd23f" },
+    body: [
+      "....hhhhhh......",
+      "...hHHHHHHh.....",
+      ".hhhhhhhhhhhh...",
+      "....aaaaaa......",
+      "...aeeaaeeaA....",
+      "...aaammmaaA....",
+      "....aaaaaaA.....",
+      "..pppppppppp....",
+      ".pPpPpPpPpPpp...",
+      ".pppppppppppp.gg",
+      "..aa.pppp.aagGGG",
+      "..aa.pppp.aa.G..",
+      "....AAAAAA......",
+    ],
+    legs: [
+      ["....bb..bb......", "....bb..bb......", "...ybb.ybb......"],
+      ["...bb....bb.....", "...bb...bb......", "..ybb...ybb....."],
+      [".....bbbb.......", ".....bb.bb......", "....ybb.ybb....."],
+    ],
+  },
+};
+
+// =============================================================== proyectiles y objetos
+export const PROJ_ART: Record<string, Art> = {
+  bullet: { pal: { y: "#ffd23f", w: "#ffffff" }, rows: [".yy.", "ywwy", "ywwy", ".yy."], outline: null },
+  missile: { pal: { o: "#ff8a2b", y: "#ffd23f", g: "#dfe4ee", G: "#7d8499", r: "#ff3b4e" }, rows: ["y.GGg..", "oGggggr", "y.GGg.."] },
+  shell: { pal: { a: "#4a4f66", h: "#9aa0c0", y: "#ffd23f" }, rows: [".aaa.", "ahhaa", "ahaaa", "aaaya", ".aaa."] },
+  bit: { pal: { c: "#3fd7ff", w: "#e6fbff", b: "#2a6fb0" }, rows: ["..c..", ".cwc.", "cwwwc", ".cbc.", "..c.."] },
+  mine: { pal: { a: "#4a4f66", h: "#9aa0c0", r: "#ff3b4e" }, rows: ["..r..", ".hhaa", "haaaa", ".aaa."] },
+  mineOff: { pal: { a: "#4a4f66", h: "#9aa0c0", r: "#6a3040" }, rows: ["..r..", ".hhaa", "haaaa", ".aaa."] },
+  orb: { pal: { r: "#ff3b6b", w: "#ffe0ea" }, rows: [".rrr.", "rwwrr", "rwwrr", "rrrrr", ".rrr."], outline: "#4a0820" },
+  orbBig: { pal: { r: "#ff5fa0", w: "#ffe0ef", R: "#c0206a" }, rows: ["..rrr..", ".rwwrr.", "rwwrrrR", "rwrrrrR", "rrrrrRR", ".rrRRR.", "..RRR.."], outline: "#4a0820" },
+  needle: { pal: { p: "#b06aff", w: "#f0e0ff" }, rows: [".p.", "pwp", "pwp", ".p."], outline: "#2a0850" },
+  bubble: { pal: { b: "#7fe3ff", w: "#ffffff", B: "#3a8ab0" }, rows: [".bbb.", "bwbbb", "bbbbb", "bbbbB", ".bBB."], outline: "#0a2a40" },
+  bolt: { pal: { g: "#f0f4ff", G: "#ff8a2b" }, rows: ["ggg", "gGg", "ggg"], outline: "#1a1a20" },
+  fire: { pal: { o: "#ff8a2b", y: "#ffd23f" }, rows: [".o.", "oyo", ".o."], outline: "#7a1a00" },
+  medal: { pal: { y: "#ffd23f", Y: "#c08a10", W: "#fff6c8" }, rows: [".yy.", "yWyY", "yyYY", ".YY."], outline: "#4a3000" },
+  block: { pal: { a: "#a0522d", h: "#d08850", A: "#5c2e18" }, rows: ["aaaaa", "ahhaA", "ahaaA", "aaaaA", "AAAAA"], outline: "#2a1008" },
+  egg: { pal: { w: "#f4f0d8", h: "#c8b890", g: "#5fd06a" }, rows: ["..ww..", ".wwgh.", "wwwwhw", "wgwhhw", "wwhhgw", ".wwww."] },
+  arcane: { pal: { p: "#b06aff", w: "#f0e0ff" }, rows: ["..p..", ".pwp.", "pwwwp", ".pwp.", "..p.."] },
+  boomer: { pal: { y: "#ffd23f", Y: "#c08a10" }, rows: ["yyyy", "yYYy", "yY..", "yy.."] },
+  wave: { pal: { c: "#7fe3ff", C: "#ffffff" }, rows: ["..cc", ".cC.", "cC..", ".cC.", "..cc"], outline: null },
+  turret: { pal: { g: "#c9cfdc", G: "#6b7287", r: "#3fd7ff" }, rows: ["..g..", ".gGg.", "gGrGg", ".GGG.", "G...G"] },
+  shuriken: { pal: { g: "#c9cfdc", G: "#6b7287", w: "#ffffff" }, rows: ["..g..", ".gGg.", "gGwGg", ".gGg.", "..g.."] },
+  shurikenBig: { pal: { g: "#c9cfdc", G: "#6b7287", w: "#ffffff" }, rows: ["...g...", "..gGg..", ".gGGGg.", "gGGwGGg", ".gGGGg.", "..gGg..", "...g..."] },
+  kunai: { pal: { o: "#c9cfdc", r: "#3a2a10", g: "#9aa0b0", w: "#ffffff" }, rows: ["....g.", "orrggw", "....g."] },
+  pellet: { pal: { y: "#ffb84a" }, rows: ["yy", "yy"], outline: "#4a2a00" },
+  dynamite: { pal: { r: "#ff3b4e", R: "#b02a3a", w: "#ffffff", k: "#3a2a10", y: "#ffd23f" }, rows: ["..y", ".k.", "rRr", "rwr", "rRr"] },
+  bee: { pal: { y: "#ffd23f", k: "#3a2a10", w: "#e6f6ff" }, rows: ["w.w", "yky", ".k."] },
+  bat: { pal: { k: "#3a1a4a", r: "#ff3b4e" }, rows: ["k...k", "kkrkk", ".kkk."] },
+  // ---- arena
+  fireball: { pal: { r: "#ff3b4e", o: "#ff8a2b", y: "#ffd23f", w: "#fff6c8" }, rows: ["..oo...", ".oyyo..", "oywwyor", "oywwyor", ".oyyo..", "..oo..."], outline: "#5a1000" },
+  snipe: { pal: { y: "#ffd23f", w: "#ffffff" }, rows: ["yyywwww", "yyywwww"], outline: "#4a3000" },
+  seed: { pal: { g: "#5fd06a", G: "#2f8a4a", w: "#d8ffe4" }, rows: [".gg.", "gwgG", "ggGG", ".GG."], outline: "#0a2a10" },
+  pollen: { pal: { p: "#e6a0ff", P: "#b06aff", w: "#ffffff" }, rows: [".pp.p", "pwppP", "ppwpP", ".pPP."], outline: "#2a0850" },
+  hook: { pal: { g: "#dfe4ee", G: "#7d8499", p: "#ff9ed2" }, rows: ["..g..g", "ppgGGg", "..g..g"] },
+  shellx: { pal: { a: "#4a4f66", h: "#9aa0c0", r: "#ff3b4e", y: "#ffd23f" }, rows: [".aaa.", "ahhar", "ahaay", "aaaar", ".aaa."] },
+  disable: { pal: { c: "#b06aff", w: "#f0e0ff" }, rows: [".c.", "cwc", "cwc", ".c."], outline: "#2a0850" },
+  batUp: { pal: { k: "#3a1a4a", r: "#ff3b4e" }, rows: [".k.k.", "kkrkk", "k...k"] },
+};
+
+/** cápsula de reparación (bidón de aceite) */
+export const CAPSULE_ART: Art = { pal: { r: "#5fe08a", R: "#2f9a52", w: "#e0ffe8", g: "#dfe4ee" }, rows: ["..gg...", ".rrrrr.", "rwrrrrR", "rwrwwrR", "rrrwwrR", "rrrrrrR", ".RRRRR."] };
+
+export const ICONS: Record<string, Art> = {
+  revolver: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f", w: "#ffffff" }, rows: ["..........", "..........", ".gggggggw.", "GgGGGGGGy.", "GGGgg.....", "GGgg......", "GGg.......", "Gg........", "..........", ".........."] },
+  blade: { pal: { c: "#7fe3ff", C: "#e6fbff", g: "#dfe4ee", G: "#7d8499" }, rows: [".......CC.", "......CCc.", ".....CCc..", "....CCc...", "...CCc....", ".G.Cc.....", "..GG......", "..GgG.....", ".G..G.....", ".........."] },
+  laser: { pal: { r: "#ff3b6b", w: "#ffffff", p: "#ffa0c0", g: "#7d8499" }, rows: ["..........", "..........", "pppppppppp", "rrrrrrrrrr", "wwwwwwwwww", "rrrrrrrrrr", "pppppppppp", "..........", "..........", ".........."], outline: null },
+  cannon: { pal: { a: "#4a4f66", h: "#9aa0c0", o: "#ff8a2b", y: "#ffd23f" }, rows: ["..........", "...hhhhh..", "..haaaaaay", "..haaaaaao", "..haaaaaay", "...hhhhh..", "..aa..aa..", ".aaaa.aaa.", "..........", ".........."] },
+  mines: PROJ_ART.mine!,
+  missile: PROJ_ART.missile!,
+  bits: { pal: { c: "#3fd7ff", w: "#e6fbff", b: "#2a6fb0" }, rows: ["....c.....", "...cwc....", "....c.....", ".c.....c..", "cwc.b.cwc.", ".c.....c..", "....c.....", "...cwc....", "....c.....", ".........."] },
+  emp: { pal: { c: "#3fd7ff", C: "#bff6ff" }, rows: ["...cccc...", "..c....c..", ".c..CC..c.", "c..C..C..c", "c.C.cc.C.c", "c.C.cc.C.c", "c..C..C..c", ".c..CC..c.", "..c....c..", "...cccc..."], outline: null },
+  legs: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["...gg.....", "...gG.....", "...gG.....", "..ggGG....", "..gGyG....", "...gG.....", "...gG.....", "..ggGGG...", ".gggGGGG..", ".........."] },
+  blindaje: { pal: { s: "#9fb1c9", d: "#5d6f8c", w: "#e6eef8", r: "#4fb4ff" }, rows: [".ssssssss.", "swwssssssd", "swsrrssssd", "sssrrrsssd", "sssrrrsssd", ".sssrrssd.", ".ssssssdd.", "..sssssd..", "...sssd...", "....dd...."] },
+  overclock: { pal: { g: "#5fe08a", G: "#2f9a52", a: "#3c3f58", y: "#ffd23f" }, rows: [".y.y.y.y..", "aaaaaaaa..", "aGGGGGGa..", "aGgggGGa.y", "aGgyygGa..", "aGgyygGa.y", "aGgggGGa..", "aGGGGGGa.y", "aaaaaaaa..", ".y.y.y.y.."] },
+  iman: { pal: { r: "#ff5f6d", R: "#b02a3a", g: "#dfe4ee" }, rows: [".rrrrr.", "rRrrrRr", "rR...Rr", "rR...Rr", "gg...gg", "gg...gg"] },
+  nucleo: { pal: { o: "#ff8a2b", y: "#ffd23f", w: "#fff6c8", r: "#ff3b4e" }, rows: ["....r.....", "...ror....", "..royor...", ".royywyor.", "roywwwwyor", ".royywyor.", "..royor...", "...ror....", "....r.....", ".........."] },
+  nanorep: { pal: { g: "#dfe4ee", G: "#7d8499", r: "#ff5f6d", w: "#ffffff" }, rows: ["gg........", "gGg.......", ".gGg......", "..gGg.....", "...gGg.rr.", "....gGrrrr", "......rwrr", ".....rrrrr", "......rrr.", ".......r.."] },
+  multi: { pal: { y: "#ffd23f", w: "#ffffff" }, rows: ["..........", ".yy...yy..", ".ywy..ywy.", ".yy...yy..", "..........", "...yy.....", "...ywy....", "...yy.....", "..........", ".........."] },
+  amp: { pal: { p: "#b06aff", P: "#e6d0ff" }, rows: ["..........", "...pppp...", "..p....p..", ".p..PP..p.", ".p.P..P.p.", ".p.P..P.p.", ".p..PP..p.", "..p....p..", "...pppp...", ".........."], outline: null },
+  chasis: { pal: { r: "#ff5f6d", R: "#b02a3a", w: "#ffd3d8" }, rows: ["..........", ".rr...rr..", "rwrr.rrrR.", "rwrrrrrrR.", "rrrrwrrrR.", ".rrwwwrR..", "..rrwrR...", "...rrR....", "....R.....", ".........."] },
+  flamer: { pal: { r: "#ff3b4e", o: "#ff8a2b", y: "#ffd23f", w: "#fff6c8" }, rows: ["....r.....", "...rr.....", "...ror..r.", "..royor.r.", "..roywor..", ".roywwyor.", ".royywyor.", "..royyor..", "...rrrr...", ".........."] },
+  drill: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["..........", "gG........", "gGGg......", "gGgGGy....", "gGGgGGgyy.", "gGgGGy....", "gGGg......", "gG........", "..........", ".........."] },
+  boomerang: { pal: { y: "#ffd23f", Y: "#c08a10" }, rows: ["..........", ".yyyyyyy..", ".yYYYYYy..", ".yYyyyyy..", ".yYy......", ".yYy......", ".yYy......", ".yYy......", ".yyy......", ".........."] },
+  staff: { pal: { p: "#b06aff", P: "#e6d0ff", w: "#ffffff", s: "#8a5a2b" }, rows: [".......pp.", "......pwwp", "......pwPp", ".......pp.", "......s...", ".....s....", "....s.....", "...s......", "..s.......", ".s........"] },
+  chain: { pal: { y: "#7fe3ff", w: "#ffffff" }, rows: [".....yy...", "....yw....", "...yw.....", "..ywwwy...", "....wy....", "...wy.....", "..wy......", ".ywwwy....", "...yy.....", "..y......."] },
+  barrier: { pal: { c: "#3fd7ff", C: "#bff6ff", g: "#9aa0b0", G: "#5a6070" }, rows: ["..........", "...cccc...", "..cCCCCc..", ".cC....Cc.", ".cC....Cc.", "cC......Cc", "cC..gg..Cc", "cC.gGGg.Cc", "gggGGGGggg", ".........."] },
+  critico: { pal: { r: "#ff5f6d" }, rows: ["....r.....", "..rrrrr...", ".r..r..r..", ".r..r..r..", "rrrr.rrrr.", ".r..r..r..", ".r..r..r..", "..rrrrr...", "....r.....", ".........."] },
+  vampiro: { pal: { w: "#ffffff", r: "#ff3b4e", R: "#b02a3a" }, rows: ["..........", ".wwwwwww..", ".w.....w..", ".ww...ww..", "..w...w...", "..........", "....r.....", "...rRr....", "...rRr....", "....r....."] },
+  thorns: { pal: { g: "#5fd06a", G: "#2f8a4a", b: "#8a5a2b", B: "#5a3a1b" }, rows: ["..........", "....g.....", "...gG..g..", "...gG.gG..", ".g.gGgGG..", ".gGgGGGg..", ".gGGgGGg..", "bbbbbbbbbb", "bBbbBbbBbb", ".........."] },
+  scythe: { pal: { r: "#e6eef8", R: "#9fb1c9", s: "#8a1a3a" }, rows: ["..rrrrr...", ".rRRRRRr..", "r.....Rr..", "......sR..", ".....s....", "....s.....", "...s......", "..s.......", ".s........", "s........."] },
+  turret: { pal: { g: "#c9cfdc", G: "#6b7287", r: "#3fd7ff", w: "#ffd23f" }, rows: ["..........", "...gggg...", "..gGGGGgww", "..gGrrGg..", "..gGGGGg..", "...gggg...", "....gg....", "...g..g...", "..g....g..", ".g......g."] },
+  hive: { pal: { k: "#3a2a10", y: "#ffd23f", Y: "#c08a10" }, rows: ["...kkkk...", "..kyyyyk..", ".kYYYYYYk.", ".kyyyyyyk.", ".kYYkkYYk.", ".kyyyyyyk.", "..kYYYYk..", "...kkkk...", "..y....y..", ".yky..yky."] },
+  bats: { pal: { k: "#5a2a6a", r: "#ff3b4e" }, rows: ["..........", "k...k...kk", "kk.kkk.kk.", ".kkkkkkk..", "..kkrkk...", "...kkk....", "....k.....", "..........", "..........", ".........."] },
+  hack: { pal: { c: "#3fd7ff", g: "#3fffb0" }, rows: ["cccccccccc", "c........c", "c.gg.....c", "c..gg....c", "c.gg..ggcc", "c........c", "cccccccccc", "....cc....", "..cccccc..", ".........."] },
+  shuriken: { pal: { g: "#c9cfdc", G: "#6b7287", w: "#ffffff" }, rows: ["....g.....", "...gGg....", "...gGg....", "gggGwGggg.", "GGGwwwGGG.", "gggGwGggg.", "...gGg....", "...gGg....", "....g.....", ".........."] },
+  kunai: { pal: { w: "#ffffff", g: "#9aa0b0", r: "#3a2a10", o: "#c9cfdc" }, rows: ["........w.", ".......wg.", "......wg..", ".....wg...", "....wg....", "...rr.....", "..rr......", ".r........", "o.........", ".........."] },
+  shotgun: { pal: { g: "#c9cfdc", G: "#6b7287", b: "#8a5a2b", w: "#ffd23f" }, rows: ["..........", "..........", "gggggggggw", "GGGGGGGGGw", "bbbbGG....", "bbbG......", "bbG.......", "b.........", "..........", ".........."] },
+  twins: { pal: { g: "#c9cfdc", G: "#6b7287", b: "#8a5a2b", w: "#ffd23f" }, rows: ["gggggw....", "GGGGGw....", "bbG.......", "bb........", "....gggggw", "....GGGGGw", "....bbG...", "....bb....", "..........", ".........."] },
+  smoke: { pal: { w: "#dfe4ee", W: "#9aa0b0", k: "#2a2a33" }, rows: ["..........", "...ww.....", "..wWWw.ww.", ".wWWWWwWWw", "wWWWWWWWWw", "wWWWWWWWWw", ".wWWWWWWw.", "..wwwwww..", "....k.....", "...kkk...."] },
+  dynamite: { pal: { r: "#ff3b4e", R: "#b02a3a", w: "#ffffff", k: "#3a2a10", y: "#ffd23f", o: "#ff8a2b" }, rows: ["......y...", ".....yo...", "....k.....", "..rrRk....", ".rrrRR....", ".rwrRR....", ".rrrRR....", ".rrrRR....", "..rrR.....", ".........."] },
+  lock: { pal: { g: "#9aa0b0", G: "#5a6070", y: "#ffd23f" }, rows: ["..........", "...gggg...", "..g....g..", "..g....g..", ".GGGGGGGG.", ".GggggggG.", ".Ggg.yggG.", ".Gggg.ggG.", ".GGGGGGGG.", ".........."] },
+  heal: CAPSULE_ART,
+  coins: { pal: { y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" }, rows: [".yyy.", "ywyyY", "yyYyY", "yyyYY", ".YYY."] },
+  medal: {
+    pal: { r: "#ff5f6d", b: "#4fb4ff", y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" },
+    rows: [".r....b...", ".rr..bb...", "..rrbb....", "...yyy....", "..ywyyY...", ".ywyyyyY..", ".yyyYyyY..", ".yyyyyYY..", "..yYYYY...", "...YYY...."],
+  },
+};

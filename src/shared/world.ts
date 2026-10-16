@@ -1,0 +1,932 @@
+// Simulación de un combate de arena (1v1 / 2v2) por rondas. Se ejecuta en el
+// cliente (solitario y sofá) o en el servidor (LAN). No toca el DOM.
+
+import {
+  ARENA_RX, ARENA_RY, CAPSULE_AT, CAPSULE_HEAL, CAPSULE_POS, CHAMPS, ENERGY_MAX, ENERGY_PER_DMG, ENERGY_REGEN, FIGHTER_R,
+  ORB_AT, ORB_ENERGY, ORB_HEAL, ORB_HP, PILLARS, ROUND_COUNTDOWN, ROUND_END_PAUSE, SLOTS, SLOT_BIT, SPAWNS, SPAWNS_2V2,
+  STORM_AT, STORM_DPS, STORM_MIN, STORM_TIME,
+  type ChampDef, type ChampId, type Difficulty, type SkillDef, type Slot,
+} from "./data";
+import { angleDiff, clamp, dist2, Rng, segDist2 } from "./math";
+import { NO_INPUT, PROJ_KINDS, ST, ZONE_KINDS, type Ev, type FSnap, type Input, type Phase, type Snap } from "./protocol";
+import { botThink, type Bot } from "./ai";
+import { SKILLS } from "./skills";
+
+export const DT = 1 / 60;
+
+export interface Motion {
+  vx: number;
+  vy: number;
+  t: number;
+  total: number;
+  /** salto: ignora pilares y no se le puede tocar */
+  air: boolean;
+  /** empujón (no lo controla quien lo sufre) */
+  knock: boolean;
+  /** altura máxima del arco (salto) */
+  h: number;
+  hit: Set<number>;
+  /** al tocar a un enemigo; devuelve true para frenar */
+  touch?: (e: Fighter) => boolean;
+  end?: () => void;
+}
+
+export interface Fighter {
+  id: number;
+  name: string;
+  champ: ChampId;
+  def: ChampDef;
+  team: number;
+  slot: number;
+  human: boolean;
+  x: number;
+  y: number;
+  z: number;
+  face: number;
+  vx: number;
+  vy: number;
+  moving: boolean;
+  hp: number;
+  maxHp: number;
+  energy: number;
+  dead: boolean;
+  cds: Record<Slot, number>;
+  cast: { slot: Slot; t: number; total: number } | null;
+  input: Input;
+  prevB: number;
+  buffer: Slot | null;
+  bufferT: number;
+  // estados: segundos restantes
+  stun: number;
+  root: number;
+  silence: number;
+  sleep: number;
+  slow: number;
+  slowK: number;
+  haste: number;
+  hasteK: number;
+  invuln: number;
+  stealth: number;
+  counter: number;
+  block: number;
+  shield: number;
+  shieldT: number;
+  hots: { hps: number; t: number; src: Fighter; acc: number }[];
+  stormAcc: number;
+  motion: Motion | null;
+  /** daño extra para el siguiente golpe básico */
+  bonus: number;
+  combo: number;
+  comboT: number;
+  flash: number;
+  lastHitBy: Fighter | null;
+  stats: { dmg: number; heal: number; kos: number };
+  bot: Bot | null;
+}
+
+export interface Proj {
+  id: number;
+  owner: Fighter;
+  team: number;
+  kind: (typeof PROJ_KINDS)[number];
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  dist: number;
+  /** daño contra el orbe */
+  orbDmg: number;
+  /** también choca con aliados (curaciones) */
+  allies: boolean;
+  pierce: boolean;
+  hit: Set<number>;
+  onHit: (w: World, t: Fighter, p: Proj) => void;
+  onEnd?: (w: World, p: Proj) => void;
+  dead: boolean;
+}
+
+export interface Zone {
+  id: number;
+  owner: Fighter;
+  team: number;
+  kind: (typeof ZONE_KINDS)[number];
+  x: number;
+  y: number;
+  r: number;
+  a: number;
+  len: number;
+  /** tiempo hasta que se activa (aviso) */
+  delay: number;
+  /** duración una vez activa */
+  dur: number;
+  t: number;
+  armed: boolean;
+  tickEvery: number;
+  tickT: number;
+  /** bloquea proyectiles enemigos (muro) */
+  wall: boolean;
+  hit: Set<number>;
+  onArm?: (w: World, z: Zone) => void;
+  onTick?: (w: World, z: Zone) => void;
+  dead: boolean;
+}
+
+export interface Aim {
+  dx: number;
+  dy: number;
+  /** distancia a la mira, limitada al alcance */
+  dist: number;
+  tx: number;
+  ty: number;
+}
+
+export interface FighterSpec {
+  id: number;
+  name: string;
+  champ: ChampId;
+  team: number;
+  human: boolean;
+  diff?: Difficulty;
+}
+
+export interface WorldOpts {
+  seed: number;
+  /** rondas para ganar */
+  wins: number;
+  arena: number;
+}
+
+const DMG_POPUP = 0, HEAL_POPUP = 1, SHIELD_POPUP = 2, TEXT_POPUP = 3;
+
+export class World {
+  rng: Rng;
+  fighters: Fighter[] = [];
+  projs: Proj[] = [];
+  zones: Zone[] = [];
+  events: Ev[] = [];
+  phase: Phase = "count";
+  pt = ROUND_COUNTDOWN;
+  round = 1;
+  score: [number, number] = [0, 0];
+  winner = -1;
+  wins: number;
+  arena: number;
+  orb: { x: number; y: number; hp: number; last: number } | null = null;
+  orbDone = false;
+  caps: { x: number; y: number; on: boolean }[] = [];
+  capsDone = false;
+  storm = 1;
+  tick = 0;
+  /** cámara lenta al acabar una ronda */
+  timeScale = 1;
+  nextId = 1;
+
+  constructor(opts: WorldOpts, specs: FighterSpec[]) {
+    this.rng = new Rng(opts.seed);
+    this.wins = opts.wins;
+    this.arena = opts.arena;
+    const perTeam = [0, 0];
+    for (const s of specs) {
+      const def = CHAMPS[s.champ];
+      const slot = perTeam[s.team]!++;
+      const f: Fighter = {
+        id: s.id, name: s.name, champ: s.champ, def, team: s.team, slot, human: s.human,
+        x: 0, y: 0, z: 0, face: s.team ? Math.PI : 0, vx: 0, vy: 0, moving: false,
+        hp: def.hp, maxHp: def.hp, energy: 0, dead: false,
+        cds: { r2: 0, l2: 0, a: 0, x: 0, y: 0, b: 0 }, cast: null,
+        input: { ...NO_INPUT, ax: s.team ? -1 : 1 }, prevB: 0, buffer: null, bufferT: 0,
+        stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, slowK: 0, haste: 0, hasteK: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
+        shield: 0, shieldT: 0, hots: [], stormAcc: 0, motion: null, bonus: 0, combo: 0, comboT: 0, flash: 0, lastHitBy: null,
+        stats: { dmg: 0, heal: 0, kos: 0 },
+        bot: s.human ? null : { diff: s.diff ?? 1, think: 0, strafe: this.rng.next() < 0.5 ? 1 : -1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 },
+      };
+      this.fighters.push(f);
+    }
+    this.resetRound();
+  }
+
+  /** ¿partida terminada? (método para que TS no estreche `phase`) */
+  winnerDone() {
+    return this.phase === "over";
+  }
+
+  get teamSize() {
+    return Math.max(...[0, 1].map((t) => this.fighters.filter((f) => f.team === t).length));
+  }
+
+  // ============================================================ rondas
+  resetRound() {
+    const spawns = this.teamSize > 1 ? SPAWNS_2V2 : SPAWNS;
+    for (const f of this.fighters) {
+      const [x, y] = spawns[f.team]![f.slot] ?? spawns[f.team]![0]!;
+      Object.assign(f, {
+        x, y, z: 0, vx: 0, vy: 0, hp: f.maxHp, dead: false, cast: null, buffer: null, motion: null,
+        stun: 0, root: 0, silence: 0, sleep: 0, slow: 0, haste: 0, invuln: 0, stealth: 0, counter: 0, block: 0,
+        shield: 0, shieldT: 0, hots: [], bonus: 0, combo: 0, flash: 0, lastHitBy: null, face: f.team ? Math.PI : 0,
+      });
+      // la energía se conserva entre rondas (como en Battlerite), las recargas no
+      for (const s of SLOTS) f.cds[s] = 0;
+    }
+    this.projs = [];
+    this.zones = [];
+    this.orb = null;
+    this.orbDone = false;
+    this.caps = [];
+    this.capsDone = false;
+    this.storm = 1;
+    this.phase = "count";
+    this.pt = ROUND_COUNTDOWN;
+    this.timeScale = 1;
+    this.ev("t", `RONDA ${this.round}`, "#ffd23f");
+    this.sfx("round");
+  }
+
+  setInput(id: number, i: Input) {
+    const f = this.fighters.find((f) => f.id === id);
+    if (!f) return;
+    const n = (v: unknown, lim: number) => (typeof v === "number" && Number.isFinite(v) ? clamp(v, -lim, lim) : 0);
+    f.input = { mx: n(i.mx, 1), my: n(i.my, 1), ax: n(i.ax, 2000), ay: n(i.ay, 2000), b: (i.b | 0) & 63 };
+  }
+
+  /** Quita a un jugador que se ha ido (LAN): pasa a ser un bot. */
+  dropHuman(id: number) {
+    const f = this.fighters.find((f) => f.id === id);
+    if (f && f.human) {
+      f.human = false;
+      f.bot = { diff: 1, think: 0, strafe: 1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 };
+    }
+  }
+
+  step(dt: number) {
+    this.tick++;
+    if (this.phase === "over") return;
+    const sdt = dt * this.timeScale;
+
+    if (this.phase === "count") {
+      this.pt -= dt;
+      for (const f of this.fighters) {
+        if (f.bot) botThink(this, f, dt);
+        this.updateFace(f);
+      }
+      const n = Math.ceil(this.pt);
+      if (Math.ceil(this.pt + dt) !== n && n > 0) this.sfx("tick");
+      if (this.pt <= 0) {
+        this.phase = "fight";
+        this.pt = 0;
+        this.ev("t", "¡ROBATTLE!", "#ff5f6d");
+        this.sfx("go");
+      }
+      return;
+    }
+
+    if (this.phase === "fight") {
+      this.pt += sdt;
+      this.roundEvents(sdt);
+    }
+    if (this.phase === "end") {
+      this.pt -= dt;
+      this.timeScale = Math.min(1, this.timeScale + dt * 0.6);
+      if (this.pt <= 0) {
+        if (this.winner >= 0) {
+          this.phase = "over";
+          return;
+        }
+        this.round++;
+        this.resetRound();
+        return;
+      }
+    }
+
+    for (const f of this.fighters) {
+      if (f.dead) continue;
+      if (f.bot && this.phase === "fight") botThink(this, f, sdt);
+      this.updateFighter(f, sdt);
+    }
+    this.separate();
+    this.updateProjs(sdt);
+    this.updateZones(sdt);
+    if (this.phase === "fight") this.checkRoundEnd();
+  }
+
+  roundEvents(dt: number) {
+    const t = this.pt;
+    if (!this.capsDone && t >= CAPSULE_AT) {
+      this.capsDone = true;
+      this.caps = CAPSULE_POS.map(([x, y]) => ({ x, y, on: true }));
+      this.ev("t", "¡CÁPSULAS DE REPARACIÓN!", "#5fe08a");
+      this.sfx("spawn");
+    }
+    if (!this.orbDone && t >= ORB_AT) {
+      this.orbDone = true;
+      this.orb = { x: 0, y: 0, hp: ORB_HP, last: -1 };
+      this.ev("t", "¡ORBE MEDALLA!", "#ffd23f");
+      this.sfx("spawn");
+    }
+    if (t >= STORM_AT) {
+      if (this.storm === 1) {
+        this.ev("t", "¡MUERTE SÚBITA!", "#b06aff");
+        this.sfx("storm");
+      }
+      this.storm = Math.max(STORM_MIN, 1 - ((t - STORM_AT) / STORM_TIME) * (1 - STORM_MIN));
+      const dps = STORM_DPS * (1 + (t - STORM_AT) / 25);
+      for (const f of this.fighters) {
+        if (f.dead) continue;
+        const d = Math.hypot(f.x / (ARENA_RX * this.storm), f.y / (ARENA_RY * this.storm));
+        if (d > 1) {
+          f.stormAcc += dps * dt;
+          if (f.stormAcc >= 2) {
+            const n = Math.floor(f.stormAcc);
+            f.stormAcc -= n;
+            this.damage(null, f, n, { pure: true });
+          }
+        }
+      }
+    }
+    for (const c of this.caps) {
+      if (!c.on) continue;
+      const f = this.fighters.find((f) => !f.dead && dist2(f.x, f.y, c.x, c.y) < 12 * 12);
+      if (f) {
+        c.on = false;
+        this.heal(f, f, CAPSULE_HEAL);
+        this.fx("pickup", c.x, c.y, 0, 0);
+        this.sfx("heal");
+      }
+    }
+  }
+
+  checkRoundEnd() {
+    const alive = [0, 1].map((t) => this.fighters.some((f) => f.team === t && !f.dead));
+    if (alive[0] && alive[1]) return;
+    let win = alive[0] ? 0 : alive[1] ? 1 : -1;
+    if (win < 0) {
+      // los dos a la vez: gana quien tenga más vida total al caer (empate improbable -> azul)
+      win = 0;
+    }
+    this.score[win]!++;
+    this.phase = "end";
+    this.pt = ROUND_END_PAUSE;
+    this.timeScale = 0.3;
+    this.projs = [];
+    if (this.score[win]! >= this.wins) {
+      this.winner = win;
+      this.ev("t", win === 0 ? "¡GANA EL EQUIPO AZUL!" : "¡GANA EL EQUIPO ROJO!", win === 0 ? "#3fd7ff" : "#ff5f6d");
+      this.sfx("victory");
+    } else {
+      this.ev("t", `RONDA PARA ${win === 0 ? "AZUL" : "ROJO"}`, win === 0 ? "#3fd7ff" : "#ff5f6d");
+      this.sfx("roundwin");
+    }
+  }
+
+  // ============================================================ robots
+  updateFace(f: Fighter) {
+    const { ax, ay } = f.input;
+    if (ax || ay) f.face = Math.atan2(ay, ax);
+  }
+
+  aimOf(f: Fighter, s: SkillDef): Aim {
+    let { ax, ay } = f.input;
+    let d = Math.hypot(ax, ay);
+    if (d < 0.001) {
+      ax = Math.cos(f.face);
+      ay = Math.sin(f.face);
+      d = 1;
+    }
+    const dx = ax / d, dy = ay / d;
+    const dist = s.range ? Math.min(d, s.range) : 0;
+    let tx = f.x + dx * dist, ty = f.y + dy * dist;
+    [tx, ty] = clampArena(tx, ty, 4);
+    return { dx, dy, dist, tx, ty };
+  }
+
+  canAct(f: Fighter) {
+    return !f.dead && f.stun <= 0 && f.sleep <= 0 && !f.motion;
+  }
+
+  canUse(f: Fighter, slot: Slot) {
+    const s = f.def.skills[slot];
+    if (f.cds[slot] > 0) return false;
+    if (s.ult && f.energy < ENERGY_MAX) return false;
+    if (slot !== "r2" && f.silence > 0) return false;
+    if ((s.aim === "dash" || s.id === "blink" || s.id === "meteor") && f.root > 0) return false;
+    return true;
+  }
+
+  updateFighter(f: Fighter, dt: number) {
+    // ---- estados
+    const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block") => {
+      if (f[k] > 0) f[k] = Math.max(0, f[k] - dt);
+    };
+    dec("stun"); dec("root"); dec("silence"); dec("sleep"); dec("slow"); dec("haste");
+    dec("invuln"); dec("stealth"); dec("counter"); dec("block");
+    if (f.shieldT > 0) {
+      f.shieldT -= dt;
+      if (f.shieldT <= 0) f.shield = 0;
+    }
+    if (f.comboT > 0) {
+      f.comboT -= dt;
+      if (f.comboT <= 0) f.combo = 0;
+    }
+    if (f.flash > 0) f.flash -= dt;
+    for (const h of f.hots) {
+      const amt = h.hps * Math.min(dt, h.t);
+      h.t -= dt;
+      h.acc += amt;
+      if (h.acc >= 1 || h.t <= 0) {
+        this.heal(h.src, f, h.acc, true);
+        h.acc = 0;
+      }
+    }
+    f.hots = f.hots.filter((h) => h.t > 0);
+    for (const s of SLOTS) if (f.cds[s] > 0) f.cds[s] = Math.max(0, f.cds[s] - dt);
+    if (this.phase === "fight") f.energy = Math.min(ENERGY_MAX, f.energy + ENERGY_REGEN * dt);
+
+    this.updateFace(f);
+
+    // ---- movimiento forzado (cargas, saltos, empujones)
+    const m = f.motion;
+    if (m) {
+      const k = Math.min(dt, m.t);
+      m.t -= dt;
+      const nx = f.x + m.vx * k, ny = f.y + m.vy * k;
+      const blocked = this.moveTo(f, nx, ny, !m.air);
+      f.z = m.air ? Math.sin(Math.PI * (1 - Math.max(0, m.t) / m.total)) * m.h : 0;
+      if (m.touch)
+        for (const e of this.fighters)
+          if (e.team !== f.team && !e.dead && !m.hit.has(e.id) && e.motion?.air !== true && dist2(e.x, e.y, f.x, f.y) < (FIGHTER_R * 2 + 3) ** 2) {
+            m.hit.add(e.id);
+            if (m.touch(e)) m.t = 0;
+          }
+      if (blocked && !m.air) m.t = 0;
+      f.vx = m.vx;
+      f.vy = m.vy;
+      f.moving = true;
+      if (m.t <= 0) {
+        f.motion = null;
+        f.z = 0;
+        if (m.air) this.pushOutPillars(f);
+        m.end?.();
+      }
+      return;
+    }
+
+    // ---- lanzamiento en curso
+    if (f.cast) {
+      if (f.stun > 0 || f.sleep > 0) f.cast = null;
+      else {
+        f.cast.t += dt;
+        if (f.cast.t >= f.cast.total) {
+          const slot = f.cast.slot;
+          f.cast = null;
+          this.fire(f, slot);
+        }
+      }
+    }
+
+    // ---- elegir skill (botones mantenidos + un pequeño búfer para toques cortos)
+    const b = f.input.b, pressed = b & ~f.prevB;
+    f.prevB = b;
+    for (const s of SLOTS)
+      if (s !== "r2" && s !== "l2" && pressed & SLOT_BIT[s]) {
+        f.buffer = s;
+        f.bufferT = 0.35;
+      }
+    if (f.bufferT > 0) {
+      f.bufferT -= dt;
+      if (f.bufferT <= 0) f.buffer = null;
+    }
+    if (this.phase === "fight" && !f.cast && this.canAct(f)) {
+      const order: Slot[] = ["b", "a", "x", "y", "l2", "r2"];
+      let use: Slot | null = null;
+      if (f.buffer && this.canUse(f, f.buffer)) use = f.buffer;
+      else for (const s of order) if (b & SLOT_BIT[s] && this.canUse(f, s)) { use = s; break; }
+      if (use) this.startCast(f, use);
+    }
+
+    // ---- caminar
+    let sp = f.def.speed;
+    if (f.stun > 0 || f.sleep > 0 || f.root > 0 || this.phase !== "fight") sp = 0;
+    if (f.slow > 0) sp *= 1 - f.slowK;
+    if (f.haste > 0) sp *= 1 + f.hasteK;
+    if (f.cast) sp *= f.def.skills[f.cast.slot].castMove;
+    if (f.block > 0) sp *= 0.5;
+    let { mx, my } = f.input;
+    const l = Math.hypot(mx, my);
+    if (l > 1) {
+      mx /= l;
+      my /= l;
+    }
+    f.vx = mx * sp;
+    f.vy = my * sp;
+    f.moving = sp > 0 && l > 0.1;
+    if (f.moving) this.moveTo(f, f.x + f.vx * dt, f.y + f.vy * dt, true);
+  }
+
+  startCast(f: Fighter, slot: Slot) {
+    const s = f.def.skills[slot];
+    if (f.buffer === slot) f.buffer = null;
+    f.cds[slot] = s.cd;
+    if (s.ult) f.energy = 0;
+    if (s.id !== "stealth") f.stealth = 0;
+    if (s.cast > 0) {
+      f.cast = { slot, t: 0, total: s.cast };
+      if (s.cast >= 0.3) this.sfx("charge");
+    } else this.fire(f, slot);
+  }
+
+  fire(f: Fighter, slot: Slot) {
+    const s = f.def.skills[slot];
+    const aim = this.aimOf(f, s);
+    f.face = Math.atan2(aim.dy, aim.dx);
+    SKILLS[s.id]?.(this, f, aim, s);
+  }
+
+  /** Mueve con colisiones; devuelve true si algo lo ha frenado. */
+  moveTo(f: Fighter, nx: number, ny: number, pillars: boolean) {
+    let blocked = false;
+    if (pillars)
+      for (const p of PILLARS) {
+        const rr = p.r + FIGHTER_R, dx = nx - p.x, dy = ny - p.y, d2 = dx * dx + dy * dy;
+        if (d2 < rr * rr) {
+          const d = Math.sqrt(d2) || 1;
+          nx = p.x + (dx / d) * rr;
+          ny = p.y + (dy / d) * rr;
+          blocked = true;
+        }
+      }
+    const [cx, cy] = clampArena(nx, ny, FIGHTER_R);
+    if (cx !== nx || cy !== ny) blocked = true;
+    f.x = cx;
+    f.y = cy;
+    return blocked;
+  }
+
+  pushOutPillars(f: Fighter) {
+    this.moveTo(f, f.x, f.y, true);
+  }
+
+  /** Los robots no se atraviesan entre sí (empuje suave). */
+  separate() {
+    const L = this.fighters.filter((f) => !f.dead && !f.motion?.air);
+    for (let i = 0; i < L.length; i++)
+      for (let j = i + 1; j < L.length; j++) {
+        const a = L[i]!, b = L[j]!;
+        const dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy, rr = FIGHTER_R * 2;
+        if (d2 < rr * rr && d2 > 0.0001) {
+          const d = Math.sqrt(d2), push = (rr - d) / 2;
+          this.moveTo(a, a.x - (dx / d) * push, a.y - (dy / d) * push, true);
+          this.moveTo(b, b.x + (dx / d) * push, b.y + (dy / d) * push, true);
+        }
+      }
+  }
+
+  // ============================================================ combate
+  targetable(t: Fighter) {
+    return !t.dead && !(t.motion?.air) && t.invuln <= 0;
+  }
+
+  damage(src: Fighter | null, t: Fighter, amt: number, o: { from?: [number, number]; pure?: boolean; melee?: boolean } = {}): boolean {
+    if (t.dead || amt <= 0) return false;
+    if (!o.pure) {
+      if (t.motion?.air || t.invuln > 0) return false;
+      // contraataque (Siete vidas)
+      if (t.counter > 0 && src) {
+        t.counter = 0;
+        t.invuln = 0.5;
+        this.fx("counter", t.x, t.y, 0, 0);
+        this.sfx("counter");
+        this.popup(t.x, t.y - 20, "¡CONTRA!", "#ff9ed2");
+        if (dist2(src.x, src.y, t.x, t.y) < 160 * 160) this.stun(src, 1);
+        return false;
+      }
+      // caparazón: bloquea lo que viene de frente
+      if (t.block > 0) {
+        const [fx, fy] = o.from ?? (src ? [src.x, src.y] : [t.x, t.y]);
+        const a = Math.atan2(fy - t.y, fx - t.x);
+        if (Math.abs(angleDiff(t.face, a)) < 1.25) {
+          if (!t.bonus) this.popup(t.x, t.y - 20, "¡BLOQUEO!", "#ffd23f");
+          t.bonus = 12;
+          this.fx("block", t.x + Math.cos(t.face) * 8, t.y + Math.sin(t.face) * 8, t.face, 0);
+          this.sfx("block");
+          return false;
+        }
+      }
+    }
+    amt = Math.round(amt);
+    let left = amt;
+    if (t.shield > 0) {
+      const ab = Math.min(t.shield, left);
+      t.shield -= ab;
+      left -= ab;
+      if (t.shield <= 0) t.shieldT = 0;
+    }
+    t.hp -= left;
+    t.flash = 0.12;
+    if (t.sleep > 0) t.sleep = 0;
+    if (src && src !== t) {
+      t.lastHitBy = src;
+      src.stats.dmg += amt;
+      src.energy = Math.min(ENERGY_MAX, src.energy + amt * ENERGY_PER_DMG);
+    }
+    this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, left < amt && !left ? SHIELD_POPUP : DMG_POPUP);
+    this.sfx(o.melee ? "melee" : "hit");
+    if (t.hp <= 0) this.kill(t);
+    return true;
+  }
+
+  kill(t: Fighter) {
+    t.hp = 0;
+    t.dead = true;
+    t.cast = null;
+    t.motion = null;
+    const k = t.lastHitBy;
+    if (k && k.team !== t.team) k.stats.kos++;
+    this.ev("k", t.id);
+    this.fx("ko", t.x, t.y, 0, 0);
+    this.sfx("ko");
+  }
+
+  heal(src: Fighter, t: Fighter, amt: number, quiet = false) {
+    if (t.dead || amt <= 0) return;
+    const real = Math.min(amt, t.maxHp - t.hp);
+    t.hp += real;
+    if (src !== t || real > 0) {
+      src.stats.heal += real;
+      src.energy = Math.min(ENERGY_MAX, src.energy + real * ENERGY_PER_DMG);
+    }
+    if (real >= 1 && (!quiet || real >= 3)) this.ev("n", Math.round(t.x), Math.round(t.y - 18), Math.round(real), HEAL_POPUP);
+  }
+
+  hot(src: Fighter, t: Fighter, hps: number, dur: number) {
+    t.hots.push({ hps, t: dur, src, acc: 0 });
+  }
+
+  addShield(t: Fighter, amt: number, dur: number) {
+    t.shield = Math.max(t.shield, amt);
+    t.shieldT = Math.max(t.shieldT, dur);
+    this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, SHIELD_POPUP);
+  }
+
+  stun(t: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.stun = Math.max(t.stun, d);
+    t.cast = null;
+    this.popup(t.x, t.y - 26, "ATURDIDO", "#ffd23f");
+  }
+  root(t: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.root = Math.max(t.root, d);
+    this.popup(t.x, t.y - 26, "INMÓVIL", "#c9cfdc");
+  }
+  silence(t: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.silence = Math.max(t.silence, d);
+    t.cast = null;
+    this.popup(t.x, t.y - 26, "SILENCIO", "#b06aff");
+  }
+  sleepFor(t: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.sleep = Math.max(t.sleep, d);
+    t.cast = null;
+    this.popup(t.x, t.y - 26, "Zzz", "#e6d0ff");
+  }
+  slowFor(t: Fighter, k: number, d: number) {
+    if (!this.ccable(t)) return;
+    if (t.slow <= 0 || k >= t.slowK) t.slowK = k;
+    t.slow = Math.max(t.slow, d);
+  }
+  ccable(t: Fighter) {
+    return !t.dead && t.invuln <= 0 && !t.motion?.air;
+  }
+
+  /** Empuja a un robot (interrumpe lo que esté lanzando). */
+  knock(t: Fighter, dx: number, dy: number, dist: number, dur = 0.22) {
+    if (!this.ccable(t)) return;
+    const l = Math.hypot(dx, dy) || 1;
+    t.cast = null;
+    t.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: false, knock: true, h: 0, hit: new Set() };
+  }
+
+  /** Movimiento propio (carga, salto, rodar). */
+  dash(f: Fighter, dx: number, dy: number, dist: number, dur: number, o: Partial<Pick<Motion, "air" | "h" | "touch" | "end">> = {}) {
+    const l = Math.hypot(dx, dy) || 1;
+    f.motion = { vx: (dx / l) * (dist / dur), vy: (dy / l) * (dist / dur), t: dur, total: dur, air: !!o.air, knock: false, h: o.h ?? 0, hit: new Set(), touch: o.touch, end: o.end };
+  }
+
+  enemiesIn(team: number, x: number, y: number, r: number) {
+    return this.fighters.filter((e) => e.team !== team && this.targetable(e) && dist2(e.x, e.y, x, y) < (r + FIGHTER_R) ** 2);
+  }
+  alliesIn(team: number, x: number, y: number, r: number) {
+    return this.fighters.filter((e) => e.team === team && !e.dead && dist2(e.x, e.y, x, y) < (r + FIGHTER_R) ** 2);
+  }
+
+  /** Golpe cuerpo a cuerpo en arco. Devuelve los enemigos alcanzados. */
+  melee(f: Fighter, range: number, arc: number, dmg: number, onHit?: (e: Fighter) => void) {
+    const hits: Fighter[] = [];
+    for (const e of this.fighters) {
+      if (e.team === f.team || e.dead) continue;
+      const dx = e.x - f.x, dy = e.y - f.y;
+      if (dx * dx + dy * dy > (range + FIGHTER_R) ** 2) continue;
+      if (Math.abs(angleDiff(f.face, Math.atan2(dy, dx))) > arc / 2 + 0.2) continue;
+      if (this.damage(f, e, dmg, { melee: true })) {
+        hits.push(e);
+        onHit?.(e);
+      }
+    }
+    if (this.orb && dist2(this.orb.x, this.orb.y, f.x, f.y) < (range + 9) ** 2 && Math.abs(angleDiff(f.face, Math.atan2(this.orb.y - f.y, this.orb.x - f.x))) < arc / 2 + 0.3)
+      this.hitOrb(f, dmg);
+    return hits;
+  }
+
+  hitOrb(f: Fighter, dmg: number) {
+    const o = this.orb;
+    if (!o) return;
+    o.hp -= dmg;
+    o.last = f.team;
+    this.ev("n", o.x, o.y - 16, Math.round(dmg), DMG_POPUP);
+    this.sfx("orbhit");
+    if (o.hp <= 0) {
+      this.orb = null;
+      for (const a of this.fighters)
+        if (a.team === f.team && !a.dead) {
+          this.heal(a, a, ORB_HEAL);
+          a.energy = Math.min(ENERGY_MAX, a.energy + ORB_ENERGY);
+        }
+      this.fx("orbbreak", o.x, o.y, f.team, 0);
+      this.sfx("orbbreak");
+      this.ev("t", `ORBE PARA ${f.team ? "ROJO" : "AZUL"}`, f.team ? "#ff5f6d" : "#3fd7ff");
+    }
+  }
+
+  // ============================================================ proyectiles
+  proj(f: Fighter, o: { kind: Proj["kind"]; dx: number; dy: number; speed: number; range: number; r?: number; dmg?: number; allies?: boolean; pierce?: boolean; onHit: Proj["onHit"]; onEnd?: Proj["onEnd"]; from?: [number, number] }) {
+    const [sx, sy] = o.from ?? [f.x + o.dx * 6, f.y + o.dy * 6];
+    const p: Proj = {
+      id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: sx, y: sy, vx: o.dx * o.speed, vy: o.dy * o.speed, r: o.r ?? 3,
+      dist: o.range, orbDmg: o.dmg ?? 0, allies: !!o.allies, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit, onEnd: o.onEnd, dead: false,
+    };
+    this.projs.push(p);
+    return p;
+  }
+
+  updateProjs(dt: number) {
+    for (const p of this.projs) {
+      if (p.dead) continue;
+      const sp = Math.hypot(p.vx, p.vy);
+      const steps = Math.max(1, Math.ceil((sp * dt) / 5));
+      const sdt = dt / steps;
+      for (let k = 0; k < steps && !p.dead; k++) {
+        p.x += p.vx * sdt;
+        p.y += p.vy * sdt;
+        p.dist -= sp * sdt;
+        // robots
+        for (const e of this.fighters) {
+          if (e.dead || p.hit.has(e.id) || e === p.owner) continue;
+          if (e.team === p.team && !p.allies) continue;
+          if (e.motion?.air) continue;
+          if (dist2(e.x, e.y - 4, p.x, p.y) > (FIGHTER_R + p.r + 1) ** 2) continue;
+          p.hit.add(e.id);
+          p.onHit(this, e, p);
+          if (!p.pierce) {
+            p.dead = true;
+            break;
+          }
+        }
+        if (p.dead) break;
+        // orbe
+        if (this.orb && dist2(this.orb.x, this.orb.y - 4, p.x, p.y) < (9 + p.r) ** 2) {
+          if (p.orbDmg) this.hitOrb(p.owner, p.orbDmg);
+          p.dead = true;
+          p.onEnd?.(this, p);
+          break;
+        }
+        // pilares, muros de fuego, borde
+        let hitWall = PILLARS.some((q) => dist2(q.x, q.y, p.x, p.y) < (q.r + p.r - 1) ** 2);
+        if (!hitWall)
+          for (const z of this.zones)
+            if (z.wall && z.armed && z.team !== p.team) {
+              const c = Math.cos(z.a + Math.PI / 2) * z.len / 2, s = Math.sin(z.a + Math.PI / 2) * z.len / 2;
+              if (segDist2(p.x, p.y, z.x - c, z.y - s, z.x + c, z.y + s) < (p.r + 3) ** 2) {
+                hitWall = true;
+                this.fx("spark", p.x, p.y, 0, 0);
+                break;
+              }
+            }
+        if (hitWall || p.dist <= 0 || (p.x / ARENA_RX) ** 2 + (p.y / ARENA_RY) ** 2 > 1.02) {
+          p.dead = true;
+          if (p.onEnd) p.onEnd(this, p);
+          else this.fx("spark", p.x, p.y, 0, 0);
+        }
+      }
+    }
+    this.projs = this.projs.filter((p) => !p.dead);
+  }
+
+  // ============================================================ zonas
+  zone(f: Fighter, o: { kind: Zone["kind"]; x: number; y: number; r: number; delay: number; dur: number; a?: number; len?: number; tickEvery?: number; wall?: boolean; onArm?: Zone["onArm"]; onTick?: Zone["onTick"] }) {
+    const z: Zone = {
+      id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
+      delay: o.delay, dur: o.dur, t: 0, armed: o.delay <= 0, tickEvery: o.tickEvery ?? 0, tickT: 0, wall: !!o.wall, hit: new Set(),
+      onArm: o.onArm, onTick: o.onTick, dead: false,
+    };
+    this.zones.push(z);
+    if (z.armed) z.onArm?.(this, z);
+    return z;
+  }
+
+  updateZones(dt: number) {
+    for (const z of this.zones) {
+      z.t += dt;
+      if (!z.armed) {
+        if (z.t >= z.delay) {
+          z.armed = true;
+          z.t = 0;
+          z.onArm?.(this, z);
+        }
+        continue;
+      }
+      if (z.onTick) {
+        if (z.tickEvery <= 0) z.onTick(this, z);
+        else {
+          z.tickT -= dt;
+          if (z.tickT <= 0) {
+            z.tickT += z.tickEvery;
+            z.onTick(this, z);
+          }
+        }
+      }
+      if (z.t >= z.dur) z.dead = true;
+    }
+    this.zones = this.zones.filter((z) => !z.dead);
+  }
+
+  // ============================================================ eventos
+  ev(...e: Ev) {
+    this.events.push(e);
+  }
+  sfx(name: string) {
+    this.events.push(["s", name]);
+  }
+  fx(kind: string, x: number, y: number, a: number, b: number) {
+    this.events.push(["f", kind, Math.round(x), Math.round(y), Math.round(a * 100) / 100, Math.round(b * 100) / 100]);
+  }
+  popup(x: number, y: number, text: string, col: string) {
+    this.events.push(["n", Math.round(x), Math.round(y), text, TEXT_POPUP, col]);
+  }
+
+  /** Línea de visión libre de pilares. */
+  clearLine(x1: number, y1: number, x2: number, y2: number, pad = 2) {
+    return !PILLARS.some((p) => segDist2(p.x, p.y, x1, y1, x2, y2) < (p.r + pad) ** 2);
+  }
+
+  // ============================================================ instantánea
+  snapshot(): Snap {
+    const f: FSnap[] = this.fighters.map((a) => {
+      let st = 0;
+      if (a.stun > 0) st |= ST.stun;
+      if (a.root > 0) st |= ST.root;
+      if (a.slow > 0) st |= ST.slow;
+      if (a.silence > 0) st |= ST.silence;
+      if (a.shield > 0) st |= ST.shield;
+      if (a.motion?.air) st |= ST.air;
+      if (a.stealth > 0) st |= ST.stealth;
+      if (a.sleep > 0) st |= ST.sleep;
+      if (a.counter > 0) st |= ST.counter;
+      if (a.block > 0) st |= ST.block;
+      if (a.haste > 0) st |= ST.haste;
+      if (a.dead) st |= ST.dead;
+      if (a.invuln > 0) st |= ST.invuln;
+      if (a.hots.length) st |= ST.hot;
+      return {
+        id: a.id, name: a.name, champ: a.champ, team: a.team, human: a.human,
+        x: Math.round(a.x * 10) / 10, y: Math.round(a.y * 10) / 10, z: Math.round(a.z), face: Math.round(a.face * 100), mv: a.moving,
+        hp: Math.ceil(a.hp), maxHp: a.maxHp, sh: Math.ceil(a.shield), en: Math.floor(a.energy),
+        cd: SLOTS.map((s) => Math.ceil(a.cds[s] * 10)),
+        cs: a.cast ? SLOTS.indexOf(a.cast.slot) : -1, cp: a.cast ? Math.round((a.cast.t / a.cast.total) * 100) : 0,
+        st, fl: a.flash > 0 ? 1 : 0, dm: a.stats.dmg, hl: Math.round(a.stats.heal), ko: a.stats.kos,
+      };
+    });
+    const pr: number[] = [];
+    for (const p of this.projs) pr.push(p.id, PROJ_KINDS.indexOf(p.kind), Math.round(p.x), Math.round(p.y), Math.round(Math.atan2(p.vy, p.vx) * 100), p.team);
+    const zn: number[] = [];
+    for (const z of this.zones)
+      zn.push(z.id, ZONE_KINDS.indexOf(z.kind), Math.round(z.x), Math.round(z.y), Math.round(z.r), Math.round(z.a * 100),
+        Math.round(z.armed ? (z.t / z.dur) * 100 : (z.t / z.delay) * 100) + (z.armed ? 1000 : 0), z.team, Math.round(z.len));
+    const ev = this.events;
+    this.events = [];
+    return {
+      phase: this.phase, pt: Math.round(this.pt * 100) / 100, round: this.round, score: [...this.score], wins: this.wins, arena: this.arena,
+      f, pr, zn, orb: this.orb ? [this.orb.x, this.orb.y, Math.max(0, Math.ceil(this.orb.hp))] : null,
+      caps: this.caps.flatMap((c) => (c.on ? [c.x, c.y] : [])),
+      storm: Math.round(this.storm * 1000) / 1000, winner: this.winner, ev,
+    };
+  }
+}
+
+/** Mete un punto dentro de la elipse de la arena (con margen). */
+export function clampArena(x: number, y: number, m: number): [number, number] {
+  const rx = ARENA_RX - m, ry = ARENA_RY - m;
+  const d = Math.hypot(x / rx, y / ry);
+  if (d <= 1) return [x, y];
+  return [x / d, y / d];
+}
