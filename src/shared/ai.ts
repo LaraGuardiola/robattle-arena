@@ -22,10 +22,10 @@ export interface Bot {
 
 const REACT = [0.32, 0.2, 0.1];
 const AIM_ERR = [0.3, 0.14, 0.05];
-const DODGE = [0.15, 0.5, 0.85];
+const DODGE = [0.1, 0.35, 0.6];
 const SKILL_USE = [0.35, 0.7, 1];
 /** velocidad media de proyectil para anticipar */
-const LEAD_SPEED: Record<string, number> = { revolver: 430, snipe: 950, fireball: 270, seed: 300, hook: 420, disable: 400, pollen: 230, shells: 330 };
+const LEAD_SPEED: Record<string, number> = { revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330 };
 
 export function botThink(w: World, f: Fighter, dt: number) {
   const b = f.bot!;
@@ -92,11 +92,14 @@ export function botThink(w: World, f: Fighter, dt: number) {
       my = ux * b.strafe;
     }
   } else {
-    const k = (dist - prefer) / 60;
+    // contra cuerpo a cuerpo: alejarse manda; si no, mantener la distancia y moverse de lado
+    const chased = t.def.prefer < 40 && dist < 110;
+    const k = (dist - prefer) / (chased ? 30 : 60);
     mx += ux * Math.max(-1, Math.min(1, k));
     my += uy * Math.max(-1, Math.min(1, k));
-    mx += -uy * b.strafe * 0.8;
-    my += ux * b.strafe * 0.8;
+    const side = chased ? 0.45 : 0.8;
+    mx += -uy * b.strafe * side;
+    my += ux * b.strafe * side;
     // si no hay línea de tiro, rodea el pilar
     if (!w.clearLine(f.x, f.y, t.x, t.y)) {
       mx += -uy * b.strafe * 1.2;
@@ -164,7 +167,8 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
     let aim: readonly [number, number] | null = null;
     switch (s.ai) {
       case "poke":
-        ok = dist <= s.range * 0.95 && clear;
+        // no despiertes a quien está dormido si no hay un aliado que lo aproveche
+        ok = dist <= s.range * 0.95 && clear && !(t.sleep > 0.3 && allies.length < 2 && hpk < 0.95);
         break;
       case "melee":
         ok = dist <= s.range + 7;
@@ -175,7 +179,7 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
         break;
       case "escape":
         if (s.id === "fist") ok = closest < 40;
-        else if (hpk < 0.5 && closest < 75) {
+        else if ((hpk < 0.5 && closest < 75) || (closest < 40 && t.def.prefer < 40)) {
           ok = true;
           // lejos del enemigo, hacia el centro
           const ex = f.x - t.x, ey = f.y - t.y, el = Math.hypot(ex, ey) || 1;

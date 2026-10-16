@@ -37,7 +37,7 @@ export const SKILLS: Record<string, SkillFn> = {
   quake(w, f, a, s) {
     w.fx("quake", f.x, f.y, angle(a), s.range);
     w.sfx("quake");
-    w.melee(f, s.range, 1.25, 22, (e) => w.slowFor(e, 0.45, 1.5));
+    w.melee(f, s.range, 1.25, 20, (e) => w.slowFor(e, 0.4, 1.5));
   },
   charge(w, f, a, s) {
     w.sfx("dash");
@@ -57,7 +57,7 @@ export const SKILLS: Record<string, SkillFn> = {
     w.fx("ring", f.x, f.y, s.range, 1);
     w.sfx("warcry");
     blast(w, f, f.x, f.y, s.range, 8, (e) => w.slowFor(e, 0.5, 1.5));
-    w.addShield(f, 25, 3);
+    w.addShield(f, 18, 3);
   },
   meteor(w, f, a, s) {
     const dx = a.tx - f.x, dy = a.ty - f.y, d = Math.hypot(dx, dy);
@@ -80,7 +80,7 @@ export const SKILLS: Record<string, SkillFn> = {
   revolver(w, f, a, s) {
     w.fx("muzzle", f.x + a.dx * 9, f.y + a.dy * 9 - 6, angle(a), 0);
     w.sfx("shoot");
-    w.proj(f, { kind: "bullet", dx: a.dx, dy: a.dy, speed: 430, range: s.range, dmg: 10, onHit: shot(10) });
+    w.proj(f, { kind: "bullet", dx: a.dx, dy: a.dy, speed: 430, range: s.range, dmg: 11, onHit: shot(11) });
   },
   snipe(w, f, a, s) {
     w.fx("muzzle", f.x + a.dx * 9, f.y + a.dy * 9 - 6, angle(a), 1);
@@ -144,7 +144,7 @@ export const SKILLS: Record<string, SkillFn> = {
   // ================================================================ Merlix
   fireball(w, f, a, s) {
     w.sfx("fireball");
-    w.proj(f, { kind: "fireball", dx: a.dx, dy: a.dy, speed: 270, range: s.range, r: 4, dmg: 13, onHit: shot(13), onEnd: (w, p) => w.fx("puff", p.x, p.y, 0, 0) });
+    w.proj(f, { kind: "fireball", dx: a.dx, dy: a.dy, speed: 270, range: s.range, r: 4, dmg: 14, onHit: shot(14), onEnd: (w, p) => w.fx("puff", p.x, p.y, 0, 0) });
   },
   firestorm(w, f, a, s) {
     w.sfx("throw");
@@ -200,12 +200,12 @@ export const SKILLS: Record<string, SkillFn> = {
   seed(w, f, a, s) {
     w.sfx("seed");
     w.proj(f, {
-      kind: "seed", dx: a.dx, dy: a.dy, speed: 300, range: s.range, dmg: 9, allies: true,
+      kind: "seed", dx: a.dx, dy: a.dy, speed: 340, range: s.range, dmg: 11, allies: true,
       onHit: (w, t, p) => {
         if (t.team === p.team) {
-          w.heal(p.owner, t, 9);
+          w.heal(p.owner, t, 11);
           w.fx("heal", t.x, t.y, 0, 0);
-        } else w.damage(p.owner, t, 9, { from: [p.x, p.y] });
+        } else if (w.damage(p.owner, t, 11, { from: [p.x, p.y] })) w.heal(p.owner, p.owner, 4, true);
       },
     });
   },
@@ -216,7 +216,7 @@ export const SKILLS: Record<string, SkillFn> = {
       onArm: (w, z) => {
         w.sfx("heal");
         for (const t of w.alliesIn(z.team, z.x, z.y, z.r)) {
-          w.heal(f, t, 24);
+          w.heal(f, t, 30);
           w.fx("heal", t.x, t.y, 0, 0);
         }
       },
@@ -242,14 +242,14 @@ export const SKILLS: Record<string, SkillFn> = {
   },
   pollen(w, f, a, s) {
     w.sfx("bubble");
-    w.proj(f, { kind: "pollen", dx: a.dx, dy: a.dy, speed: 230, range: s.range, r: 5, onHit: (w, t) => w.sleepFor(t, 1.6), onEnd: (w, p) => w.fx("puff", p.x, p.y, 1, 0) });
+    w.proj(f, { kind: "pollen", dx: a.dx, dy: a.dy, speed: 230, range: s.range, r: 5, onHit: (w, t) => w.sleepFor(t, 2), onEnd: (w, p) => w.fx("puff", p.x, p.y, 1, 0) });
   },
   garden(w, f, a, s) {
     w.sfx("garden");
     w.zone(f, {
       kind: "garden", x: a.tx, y: a.ty, r: s.size, delay: 0.2, dur: 4, tickEvery: 0.25,
       onTick: (w, z) => {
-        for (const t of w.alliesIn(z.team, z.x, z.y, z.r)) w.heal(f, t, 11 * 0.25, true);
+        for (const t of w.alliesIn(z.team, z.x, z.y, z.r)) w.heal(f, t, 14 * 0.25, true);
         for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) w.slowFor(e, 0.35, 0.4);
       },
     });
@@ -257,7 +257,7 @@ export const SKILLS: Record<string, SkillFn> = {
 
   // ================================================================ Nekobot
   claw(w, f, a, s) {
-    const dmg = 9 + f.bonus;
+    const dmg = 11 + f.bonus;
     w.fx("claw", f.x, f.y, angle(a), s.range);
     w.sfx("claw");
     if (w.melee(f, s.range, 1.6, dmg).length && f.bonus) {
@@ -268,8 +268,8 @@ export const SKILLS: Record<string, SkillFn> = {
   hook(w, f, a, s) {
     w.sfx("throw");
     w.proj(f, {
-      kind: "hook", dx: a.dx, dy: a.dy, speed: 420, range: s.range, r: 4, dmg: 10,
-      onHit: shot(10, (w, t, p) => {
+      kind: "hook", dx: a.dx, dy: a.dy, speed: 420, range: s.range, r: 4, dmg: 12,
+      onHit: shot(12, (w, t, p) => {
         const o = p.owner, d = Math.hypot(o.x - t.x, o.y - t.y);
         if (d > 16) w.knock(t, o.x - t.x, o.y - t.y, d - 14, 0.25);
         w.sfx("hook");
@@ -291,7 +291,7 @@ export const SKILLS: Record<string, SkillFn> = {
     f.stealth = 2.5;
     f.haste = 2.5;
     f.hasteK = 0.3;
-    f.bonus = 15;
+    f.bonus = 20;
     w.fx("teleport", f.x, f.y, 2, 0);
     w.sfx("stealth");
   },
@@ -304,7 +304,7 @@ export const SKILLS: Record<string, SkillFn> = {
     f.invuln = 0.32;
     w.dash(f, a.dx, a.dy, s.range, 0.3, {
       touch: (e) => {
-        if (w.damage(f, e, 30, { melee: true, pure: true })) w.slowFor(e, 0.6, 1.5);
+        if (w.damage(f, e, 34, { melee: true, pure: true })) w.slowFor(e, 0.6, 1.5);
         w.fx("claw", e.x, e.y, Math.atan2(a.dy, a.dx), 16);
         return false;
       },

@@ -727,7 +727,7 @@ export class World {
       if (e.team === f.team || e.dead) continue;
       const dx = e.x - f.x, dy = e.y - f.y;
       if (dx * dx + dy * dy > (range + FIGHTER_R) ** 2) continue;
-      if (Math.abs(angleDiff(f.face, Math.atan2(dy, dx))) > arc / 2 + 0.2) continue;
+      if (Math.abs(angleDiff(f.face, Math.atan2(dy, dx))) > arc / 2 + 0.1) continue;
       if (this.damage(f, e, dmg, { melee: true })) {
         hits.push(e);
         onHit?.(e);
