@@ -206,9 +206,6 @@ input:focus { border-color: var(--yellow); }
 .mini.diff.d2 { color: var(--red); }
 .mini.sit { background: var(--yellow); color: var(--ink); box-shadow: inset -2px -2px 0 #c08a10, inset 2px 2px 0 #fff3b0; margin-right: auto; }
 #lobby-detail { width: min(1100px, 100%); padding: 10px 14px; }
-#champ-pick { gap: 4px; margin-bottom: 8px; }
-#champ-pick .btn { font-size: 13px; padding: 2px 6px 2px 2px; display: inline-flex; align-items: center; gap: 3px; }
-#champ-pick .btn img { width: 28px; height: 26px; }
 @media (max-width: 860px) {
   #teams { flex-direction: column; }
   .vs { font-size: 26px; }
@@ -229,7 +226,7 @@ input:focus { border-color: var(--yellow); }
 .sk.ult { border-color: var(--yellow); }
 .sk .tx { color: var(--text); }
 .sk .cd { color: var(--dim); font-size: 12px; }
-#champ-tabs .btn.on { background: var(--green); }
+#champ-tabs { width: min(1100px, 100%); }
 #champ-detail { width: min(1100px, 100%); }
 @media (max-width: 860px) { .skills { grid-template-columns: 1fr; } }
 
@@ -319,3 +316,14 @@ input:focus { border-color: var(--yellow); }
 
 /* metrónomo de Resonix: el básico brilla en el pulso */
 .sks .s.beat { box-shadow: 0 0 0 2px #ffd23f, 0 0 10px #ff3b9e; }
+
+/* ---------- roster en rejilla (estilo juego de lucha) ---------- */
+.roster { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 4px; width: min(1100px, 100%); margin-bottom: 10px; }
+.roster .cell {
+  display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px 3px;
+  background: #1a1630; border: 2px solid #3a3460; color: var(--dim); font: inherit; font-size: 12px; cursor: pointer;
+}
+.roster .cell img { width: 48px; height: auto; image-rendering: pixelated; }
+.roster .cell:hover { border-color: #ffd23f; color: #fff; }
+.roster .cell.on { border-color: #ffd23f; background: #3a2f10; color: #ffd23f; box-shadow: 0 0 0 2px #17121f, 0 0 10px #ffd23f88; }
+@media (max-width: 860px) { .roster { grid-template-columns: repeat(5, minmax(0, 1fr)); } }

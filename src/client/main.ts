@@ -77,7 +77,9 @@ function toast(msg: string) {
 }
 
 function renderTitle() {
-  $("title-bots").innerHTML = CHAMP_IDS.map((c, i) => `<img src="${robotURL(c, 4, i >= CHAMP_IDS.length / 2)}" alt="">`).join("");
+  // 10 campeones al azar cada vez (no caben todos en fila)
+  const bots = [...CHAMP_IDS].sort(() => Math.random() - 0.5).slice(0, 10);
+  $("title-bots").innerHTML = bots.map((c, i) => `<img src="${robotURL(c, 4, i >= bots.length / 2)}" alt="">`).join("");
   const st = save.stats;
   $("title-foot").innerHTML = st.games ? `<span>Partidas: ${st.games}</span><span>Victorias: ${st.wins}</span>` : `<span>Un battle arena de robots · 1v1 y 2v2</span>`;
 }
@@ -100,9 +102,14 @@ function champHTML(id: ChampId, pad = false) {
   return `<div class="champ-head"><img src="${robotURL(id, 4)}" alt=""><div><div class="nm">${c.name} <span class="role">· ${c.role}</span></div><div class="ds">${esc(c.desc)}</div><div class="stats">Vida ${c.hp} · Velocidad ${c.speed}</div></div></div><div class="skills">${sk}</div>`;
 }
 
+/** Rejilla de retratos al estilo de los juegos de lucha: robot y nombre debajo. */
+function rosterHTML(sel: ChampId, attr: string) {
+  return `<div class="roster">${CHAMP_IDS.map((c) => `<button class="cell ${c === sel ? "on" : ""}" data-${attr}="${c}" title="${CHAMPS[c].role}"><img src="${robotURL(c, 3)}" alt=""><span>${CHAMPS[c].name}</span></button>`).join("")}</div>`;
+}
+
 let champTab: ChampId = "beetlix";
 function renderChamps() {
-  $("champ-tabs").innerHTML = CHAMP_IDS.map((c) => `<button class="btn ${c === champTab ? "on sel" : ""}" data-champ="${c}">${CHAMPS[c].name}</button>`).join("");
+  $("champ-tabs").innerHTML = rosterHTML(champTab, "champ");
   $("champ-detail").innerHTML = champHTML(champTab, padsRaw().length > 0);
   for (const b of $("champ-tabs").querySelectorAll<HTMLElement>("[data-champ]"))
     b.onclick = () => {
@@ -252,12 +259,17 @@ function renderLobby() {
     $("lobby-ready").textContent = kb && kb.seat.ready ? "No estoy listo" : "¡Listo!";
     $("lobby-start").classList.remove("hidden");
   }
-  // selector de campeón para el teclado / este cliente
-  const picker = (lan || findSeat("kb"))
-    ? `<div class="row" id="champ-pick">${CHAMP_IDS.map((c) => `<button class="btn ${c === detailChamp ? "on" : "ghost"}" data-pick="${c}"><img src="${robotURL(c, 2)}" alt="">${CHAMPS[c].name}</button>`).join("")}</div>`
-    : "";
-  $("lobby-detail").innerHTML = picker + champHTML(detailChamp, !lan && !findSeat("kb") && padsRaw().length > 0);
-  for (const b of $("lobby-detail").querySelectorAll<HTMLElement>("[data-pick]")) b.onclick = () => pickChamp(b.dataset.pick as ChampId);
+  // roster completo: si tienes hueco, elige campeón; si no, sólo enseña su ficha
+  const canPick = lan ? !!room!.seats.flat().find((s) => s.owner === net?.id) : !!findSeat("kb");
+  $("lobby-detail").innerHTML = rosterHTML(detailChamp, "pick") + champHTML(detailChamp, !lan && !findSeat("kb") && padsRaw().length > 0);
+  for (const b of $("lobby-detail").querySelectorAll<HTMLElement>("[data-pick]"))
+    b.onclick = () => {
+      const c = b.dataset.pick as ChampId;
+      if (canPick) return pickChamp(c);
+      detailChamp = c;
+      sfx("select");
+      renderLobby();
+    };
   for (const b of document.querySelectorAll<HTMLElement>("#teams .seat")) {
     const team = +b.dataset.team!, slot = +b.dataset.slot!;
     b.onclick = () => clickSeat(team, slot);
