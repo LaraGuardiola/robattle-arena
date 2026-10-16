@@ -131,10 +131,13 @@ export interface SkillDef {
   back?: boolean;
   /** se mantiene (visor): no tiene efecto propio, otras skills miran `f.hold` */
   hold?: boolean;
+  /** canalización que se corta al soltar el botón (Rayo solar) */
+  holdCast?: boolean;
 }
 
 export type ChampId = "beetlix" | "coltron" | "merlix" | "florak" | "nekobot" | "sawkuwa" | "tanker" | "vladbot" | "nexus" | "shinobot"
-  | "arquibot" | "gatlinga" | "boomera" | "sniperix" | "ignis" | "bombi";
+  | "arquibot" | "gatlinga" | "boomera" | "sniperix" | "ignis" | "bombi"
+  | "prisma" | "magnetra" | "resonix" | "golemax";
 
 export interface ChampDef {
   id: ChampId;
@@ -460,6 +463,82 @@ export const CHAMPS: Record<ChampId, ChampDef> = {
       b: S({ id: "nuke", name: "Mini nuke", desc: "DEFINITIVA. Una bomba con cuenta atrás de 2,5 s (aviso enorme): 45 de daño en 60 px y deja el suelo radiactivo 3 s (5 por segundo).", icon: "nuke", cd: 1, cast: 0.4, range: 200, aim: "ground", size: 60, ai: "ult", ult: true }),
     },
   },
+  // ------------------------------------------------------------ luz
+  prisma: {
+    id: "prisma",
+    name: "Prisma",
+    role: "Tiradora de luz",
+    desc: "Robot de cristal facetado. Sus rayos rebotan en las columnas y en sus propios espejos: juega con los ángulos.",
+    hp: 165,
+    speed: 61,
+    prefer: 165,
+    color: "#bff6ff",
+    skills: {
+      r2: S({ id: "lightbeam", name: "Haz", desc: "Rayo instantáneo (200 px) que rebota una vez en columnas, cajas y bordes: 8 de daño, 12 si da tras el rebote.", icon: "lightbeam", cd: 0.7, cast: 0.15, castMove: 0.65, range: 200, aim: "line", size: 2, ai: "poke" }),
+      l2: S({ id: "mirror", name: "Espejo", desc: "Colocas un espejo perpendicular a la mira (40 de vida, 6 s): refleja tus haces y también los proyectiles de cualquiera.", icon: "mirror", cd: 10, cast: 0.25, range: 90, aim: "ground", size: 15, ai: "zone" }),
+      a: S({ id: "glint", name: "Destello", desc: "Te teletransportas 80 px y ciegas 1 s a los enemigos a menos de 40 px de donde estabas.", icon: "glint", cd: 9, cast: 0, range: 80, aim: "ground", size: 8, ai: "escape" }),
+      x: S({ id: "splitter", name: "Prisma divisor", desc: "Orbe de luz: 10 de daño y, al chocar o llegar al final, se divide en 3 haces en abanico de 7 cada uno.", icon: "splitter", cd: 9, cast: 0.25, range: 190, aim: "line", size: 4, ai: "poke" }),
+      y: S({ id: "refraction", name: "Refracción", desc: "1,2 s translúcida: los proyectiles y rayos enemigos te atraviesan (las zonas y los golpes no). Puedes seguir disparando.", icon: "refraction", cd: 14, cast: 0, range: 0, aim: "self", ai: "defend" }),
+      b: S({ id: "sunray", name: "Rayo solar", desc: "DEFINITIVA. Mantén hasta 3 s: un rayo cae del cielo sobre la mira y la sigue a 90 px/s: 25 de daño por segundo.", icon: "sunray", cd: 1, cast: 3, castMove: 0.3, range: 220, aim: "ground", size: 18, ai: "ult", ult: true, holdCast: true }),
+    },
+  },
+  // ------------------------------------------------------------ magnetismo
+  magnetra: {
+    id: "magnetra",
+    name: "Magnetra",
+    role: "Controladora",
+    desc: "Robot con imanes en U por brazos. Marca a sus rivales con polaridad y los estrella entre sí, desvía balas y levanta a todos por los aires.",
+    hp: 175,
+    speed: 60,
+    prefer: 145,
+    color: "#ff3b4e",
+    skills: {
+      r2: S({ id: "magpulse", name: "Pulso", desc: "Bola magnética de 8 de daño. Alterna polaridad (roja + / azul −) en cada disparo y marca 3 s al que golpea.", icon: "magpulse", cd: 0.5, cast: 0.15, castMove: 0.65, range: 215, aim: "line", size: 4, ai: "poke" }),
+      l2: S({ id: "polarity", name: "Atracción / repulsión", desc: "Activa las marcas: dos enemigos de polaridad opuesta chocan (12 de daño y 1 s aturdidos); de la misma, salen despedidos. Con un solo marcado: + lo atrae hacia ti, − lo lanza lejos (empotrable).", icon: "polarity", cd: 6, cast: 0.1, range: 260, aim: "self", size: 0, ai: "cc" }),
+      a: S({ id: "levitate", name: "Levitación", desc: "Salto magnético de 100 px. Si apuntas a una columna, te pegas a ella y sales por el lado opuesto.", icon: "levitate", cd: 9, cast: 0, range: 100, aim: "dash", size: 8, ai: "escape" }),
+      x: S({ id: "deflector", name: "Campo desviador", desc: "Campo de 3 s a tu alrededor (45 px) que curva hacia fuera los proyectiles enemigos que lo cruzan.", icon: "deflector", cd: 13, cast: 0, range: 0, aim: "self", size: 45, ai: "defend" }),
+      y: S({ id: "absorb", name: "Imán absorbente", desc: "1,5 s atrayendo los proyectiles enemigos a 60 px: cada uno que absorbes te da 6 de escudo y 5 de energía.", icon: "absorb", cd: 12, cast: 0, range: 0, aim: "self", size: 60, ai: "defend" }),
+      b: S({ id: "magstorm", name: "Tormenta magnética", desc: "DEFINITIVA. Zona grande que a los 0,6 s quita los escudos, silencia 1,5 s y levanta por los aires 1 s a los enemigos dentro.", icon: "magstorm", cd: 1, cast: 0.2, range: 170, aim: "ground", size: 70, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ sónico
+  resonix: {
+    id: "resonix",
+    name: "Resonix",
+    role: "Soporte sónico",
+    desc: "Robot con altavoces en los hombros. Dispara notas que curan o dañan y, si las lanzas al ritmo de la música, hacen más y dejan eco.",
+    hp: 175,
+    speed: 61,
+    prefer: 160,
+    color: "#7a3aff",
+    skills: {
+      r2: S({ id: "note", name: "Nota", desc: "Onda de sonido: 9 de daño a enemigos u 8 de curación a aliados. En el pulso de la música (el metrónomo del HUD), +50% y un eco repite la mitad a los 0,5 s.", icon: "note", cd: 0.5, cast: 0.1, castMove: 0.7, range: 210, aim: "line", size: 4, ai: "poke" }),
+      l2: S({ id: "speaker", name: "Altavoz", desc: "Colocas un altavoz (35 de vida, 7 s) que repite cada nota tuya contra el enemigo más cercano.", icon: "speaker", cd: 12, cast: 0.3, range: 100, aim: "ground", size: 10, ai: "zone" }),
+      a: S({ id: "shockwave", name: "Onda expansiva", desc: "Te impulsas 80 px y empujas 30 px a los enemigos que estaban a tu lado.", icon: "shockwave", cd: 9, cast: 0, range: 80, aim: "dash", size: 8, ai: "escape" }),
+      x: S({ id: "lifesong", name: "Canción de vida", desc: "Canalizas 2 s un aura de 60 px: los aliados (tú incluido) se curan 10 por segundo y reciben un 20% menos de daño.", icon: "lifesong", cd: 14, cast: 2, castMove: 0.4, range: 0, aim: "self", size: 60, ai: "heal" }),
+      y: S({ id: "scream", name: "Grito sónico", desc: "Cono de 90 px: empuja 50 px y silencia 1 s.", icon: "scream", cd: 11, cast: 0.2, range: 90, aim: "cone", size: 90, ai: "cc" }),
+      b: S({ id: "concert", name: "Concierto final", desc: "DEFINITIVA. 4 s de concierto: aliados a 120 px un 25% más rápidos y con recargas un 40% más cortas; los enemigos a 120 px quedan mareados (controles invertidos) 1,5 s.", icon: "concert", cd: 1, cast: 0.2, range: 120, aim: "self", size: 120, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ gólem
+  golemax: {
+    id: "golemax",
+    name: "Golemax",
+    role: "Gólem",
+    desc: "Mole de piedra y hierro con núcleo de lava. Agarra a sus rivales y los estampa contra las columnas, levanta pilares de roca y hace temblar el suelo.",
+    hp: 235,
+    speed: 56,
+    prefer: 18,
+    color: "#7a7068",
+    skills: {
+      r2: S({ id: "punch", name: "Puñetazo", desc: "Golpe en arco delante de ti: 13 de daño.", icon: "punch", cd: 0.6, cast: 0.15, castMove: 0.6, range: 26, aim: "cone", size: 26, ai: "melee" }),
+      l2: S({ id: "grab", name: "Agarre", desc: "Agarras al enemigo de delante y lo llevas encima 1,5 s (no puede actuar). Vuelve a pulsar para lanzarlo hacia la mira: 14 de daño y, si choca contra columna o muro, aturdido 1,2 s.", icon: "grab", cd: 9, cast: 0, range: 30, aim: "cone", size: 30, ai: "melee" }),
+      a: S({ id: "unstoppable", name: "Carga imparable", desc: "Cargas 110 px sin que nada te pare (ni aturdimientos ni empujones): arrollas con 10 de daño y apartas.", icon: "unstoppable", cd: 10, cast: 0, range: 110, aim: "dash", size: 10, ai: "gap" }),
+      x: S({ id: "rockpillar", name: "Pilar de roca", desc: "Levantas un pilar en el punto marcado (80 de vida, 6 s): bloquea todo y sirve para estampar.", icon: "rockpillar", cd: 13, cast: 0.3, range: 120, aim: "ground", size: 10, ai: "zone" }),
+      y: S({ id: "quakeline", name: "Terremoto", desc: "Grieta en línea de 120 px: 14 de daño y por los aires 0,8 s.", icon: "quakeline", cd: 10, cast: 0.4, castMove: 0.3, range: 120, aim: "line", size: 14, ai: "cc" }),
+      b: S({ id: "titanfist", name: "Puño del titán", desc: "DEFINITIVA. Saltas al punto marcado: al caer, 30 de daño en 50 px y por los aires 1 s; deja una grieta 3 s que frena un 30%.", icon: "titanfist", cd: 1, cast: 0.1, range: 150, aim: "ground", size: 50, ai: "ult", ult: true }),
+    },
+  },
 };
 export const CHAMP_IDS = Object.keys(CHAMPS) as ChampId[];
 
@@ -467,13 +546,14 @@ export type Difficulty = 0 | 1 | 2;
 export const DIFF_NAMES = ["Fácil", "Normal", "Difícil"];
 
 /** Arenas: temática de suelo (tiles.ts), música, trampa de las palancas y disposiciones de columnas. */
-export interface ArenaDef { name: string; theme: number; track: string; trap: TrapKind; trapName: string; layouts: LayoutId[] }
+/** `bpm`: tempo de la música de la arena (el ritmo de Resonix va con él). */
+export interface ArenaDef { name: string; theme: number; track: string; bpm: number; trap: TrapKind; trapName: string; layouts: LayoutId[] }
 export const ARENAS: ArenaDef[] = [
-  { name: "Parque Robattle", theme: 0, track: "park", trap: "geyser", trapName: "¡GÉISERES!", layouts: ["classic", "diamond", "halls", "crown"] },
-  { name: "Fábrica Omega", theme: 2, track: "factory", trap: "press", trapName: "¡PRENSA HIDRÁULICA!", layouts: ["classic", "halls", "diamond", "crown"] },
-  { name: "Ciudad Neón", theme: 3, track: "neon", trap: "laser", trapName: "¡REJILLA LÁSER!", layouts: ["classic", "crown", "diamond", "halls"] },
-  { name: "Desguace", theme: 1, track: "scrap", trap: "magnet", trapName: "¡GRÚA ELECTROIMÁN!", layouts: ["scrap", "classic", "halls"] },
-  { name: "Núcleo", theme: 4, track: "core", trap: "pulse", trapName: "¡PULSO DE MEDALLA!", layouts: ["core", "diamond", "crown"] },
+  { name: "Parque Robattle", theme: 0, track: "park", bpm: 170, trap: "geyser", trapName: "¡GÉISERES!", layouts: ["classic", "diamond", "halls", "crown"] },
+  { name: "Fábrica Omega", theme: 2, track: "factory", bpm: 116, trap: "press", trapName: "¡PRENSA HIDRÁULICA!", layouts: ["classic", "halls", "diamond", "crown"] },
+  { name: "Ciudad Neón", theme: 3, track: "neon", bpm: 132, trap: "laser", trapName: "¡REJILLA LÁSER!", layouts: ["classic", "crown", "diamond", "halls"] },
+  { name: "Desguace", theme: 1, track: "scrap", bpm: 124, trap: "magnet", trapName: "¡GRÚA ELECTROIMÁN!", layouts: ["scrap", "classic", "halls"] },
+  { name: "Núcleo", theme: 4, track: "core", bpm: 166, trap: "pulse", trapName: "¡PULSO DE MEDALLA!", layouts: ["core", "diamond", "crown"] },
 ];
 /** Nombre de la disposición elegida en la sala (-1 = al azar). */
 export const layoutName = (arena: number, layout: number) => (layout < 0 ? "Al azar" : LAYOUTS[(ARENAS[arena] ?? ARENAS[0]!).layouts[layout] ?? "classic"]!.name);

@@ -38,6 +38,20 @@ cono y Postcombustión de 110 px; granada 14 de daño en 20 px cada 0,7 s;
 Traje ignífugo devuelve 0,4 × lo absorbido; el Gancho sin enganche da un
 saltito; el riel gira despacio hacia la mira durante la carga.
 
+**Hecho (tanda 3):** Prisma, Magnetra, Resonix y Golemax con su arte. Motor:
+rayos instantáneos que rebotan (`w.beam`), espejos (`Prop.reflect`),
+refracción, canalizaciones que se cortan al soltar (`SkillDef.holdCast`),
+polaridad (`pol`/`polT`/`polBy`), imán absorbente (`absorbT`), ritmo
+(`ARENAS[].bpm`, `w.onBeat`, metrónomo en el HUD), mareo (`daze`), agarrar y
+lanzar (`carry`/`heldBy`, `w.throwHeld`) e imparable (`unstop`).
+Desviaciones: Haz 8/12 cada 0,7 s; Pulso 8 de daño y alcance 215; Nota con
+alcance 210; el eco de la Nota repite la mitad; Golemax 235 de vida.
+
+**Pendiente:** cintas transportadoras de la Fábrica, rejilla de retratos en la
+sala (con 20 campeones los botones ◀ ▶ y la fila que se parte en dos siguen
+funcionando) y repasar a Vladbot (~70%) y Florak (~30%), que ya venían
+descompensados del roster original.
+
 - 10 campeones en `src/shared/data.ts` (`CHAMPS`), comportamiento en
   `src/shared/skills.ts` (`SKILLS` + `CHANNELS` para canalizaciones).
 - Slots fijos: `r2` básico (mantener), `l2` secundaria, `a` movilidad, `x`/`y`

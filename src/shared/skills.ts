@@ -1115,6 +1115,343 @@ export const SKILLS: Record<string, SkillFn> = {
       },
     });
   },
+
+  // ================================================================ Prisma
+  lightbeam(w, f, a, s) {
+    w.sfx("laser");
+    const r = w.beam(f, f.x + a.dx * 6, f.y + a.dy * 6, a.dx, a.dy, s.range, 1);
+    if (r.e) {
+      w.damage(f, r.e, r.bounced ? 12 : 8, { from: [r.x, r.y] });
+      if (r.bounced) w.popup(r.e.x, r.e.y - 30, "¡REBOTE!", "#bff6ff");
+    }
+  },
+  mirror(w, f, a) {
+    for (const p of w.props) if (p.kind === "mirror" && p.owner === f) w.breakProp(p);
+    w.sfx("dome");
+    w.addProp(f, {
+      kind: "mirror", x: a.tx, y: a.ty, r: 3, len: 30, a: angle(a) + Math.PI / 2, hp: 40, t: 6, reflect: true,
+      onBreak: (w, p) => w.fx("crate", p.x, p.y, 1, 0),
+    });
+  },
+  glint(w, f, a) {
+    const ox = f.x, oy = f.y;
+    w.fx("teleport", ox, oy, 0, 0);
+    w.fx("ring", ox, oy, 40, 1);
+    for (const e of w.enemiesIn(f.team, ox, oy, 40)) w.blindFor(e, 1);
+    f.x = a.tx;
+    f.y = a.ty;
+    w.pushOutPillars(f);
+    w.fx("teleport", f.x, f.y, 1, 0);
+    w.sfx("teleport");
+  },
+  splitter(w, f, a, s) {
+    w.sfx("throw");
+    const split = (w: World, p: Proj) => {
+      const base = Math.atan2(p.vy, p.vx);
+      w.sfx("laser");
+      for (const off of [-0.45, 0, 0.45]) {
+        const an = base + off;
+        const r = w.beam(f, p.x, p.y, Math.cos(an), Math.sin(an), 90, 0);
+        if (r.e) w.damage(f, r.e, 7, { from: [p.x, p.y] });
+      }
+    };
+    w.proj(f, {
+      kind: "prismOrb", dx: a.dx, dy: a.dy, speed: 300, range: s.range, r: 4, dmg: 10,
+      onHit: (w, t, p) => {
+        w.damage(f, t, 10, { from: [p.x, p.y] });
+        p.hit.add(t.id);
+        split(w, p);
+      },
+      onEnd: split,
+    });
+  },
+  refraction(w, f) {
+    f.refract = 1.2;
+    w.fx("sap", f.x, f.y, 0, 0);
+    w.sfx("stealth");
+  },
+  sunray() {
+    // el efecto va en la canalización (CHANNELS.sunray); al acabar el rayo se apaga solo
+  },
+
+  // ================================================================ Magnetra
+  magpulse(w, f, a, s) {
+    w.sfx("zap");
+    // alterna polaridad en cada disparo
+    f.pol = f.pol > 0 ? -1 : 1;
+    const pol = f.pol;
+    f.polT = 99;
+    w.proj(f, {
+      kind: pol > 0 ? "magPlus" : "magMinus", dx: a.dx, dy: a.dy, speed: 330, range: s.range, r: 4, dmg: 8,
+      onHit: shot(8, (_w, t) => {
+        t.pol = pol;
+        t.polT = 3;
+        t.polBy = f;
+      }),
+    });
+  },
+  polarity(w, f) {
+    const marked = w.fighters.filter((e) => e.team !== f.team && !e.dead && e.polT > 0 && e.polBy === f && dist2(e.x, e.y, f.x, f.y) < 300 * 300);
+    w.sfx("singularity");
+    w.fx("ring", f.x, f.y, 30, 4);
+    const crash = (e: Fighter) => {
+      if (w.damage(f, e, 12, { from: [f.x, f.y] })) w.stun(e, 1);
+      w.fx("boom", e.x, e.y - 4, 12, 0);
+    };
+    if (marked.length >= 2) {
+      const [p, q] = marked as [Fighter, Fighter];
+      const dx = q.x - p.x, dy = q.y - p.y, d = Math.hypot(dx, dy) || 1;
+      if (p.pol !== q.pol) {
+        // opuestos: se atraen hasta chocar
+        const go = Math.max(0, d / 2 - FIGHTER_R);
+        w.knock(p, dx, dy, go, 0.25, () => crash(p));
+        w.knock(q, -dx, -dy, go, 0.25, () => crash(q));
+        w.zone(f, { kind: "puff", x: (p.x + q.x) / 2, y: (p.y + q.y) / 2, r: 4, delay: 0.25, dur: 0.05, onArm: () => [p, q].forEach(crash) });
+      } else {
+        const slam = (e: Fighter) => () => {
+          w.fx("boom", e.x, e.y - 4, 12, 0);
+          if (w.damage(f, e, 10, { from: [e.x, e.y] })) w.stun(e, 0.8);
+        };
+        w.knock(p, -dx, -dy, 70, 0.3, slam(p));
+        w.knock(q, dx, dy, 70, 0.3, slam(q));
+      }
+    } else if (marked.length === 1) {
+      const e = marked[0]!;
+      const dx = f.x - e.x, dy = f.y - e.y, d = Math.hypot(dx, dy) || 1;
+      w.damage(f, e, 12, { from: [f.x, f.y] });
+      if (e.pol > 0) w.knock(e, dx, dy, Math.max(0, d - 22), 0.3);
+      else
+        w.knock(e, -dx, -dy, 80, 0.3, () => {
+          w.fx("boom", e.x, e.y - 4, 12, 0);
+          w.sfx("slam");
+          if (w.damage(f, e, 10, { from: [e.x, e.y] })) w.stun(e, 1);
+        });
+    }
+    for (const e of marked) e.polT = 0;
+  },
+  levitate(w, f, a, s) {
+    w.sfx("leap");
+    // si apunta a una columna cercana, sale por el otro lado
+    let dist = s.range;
+    for (const p of w.pillars) {
+      const t = (p.x - f.x) * a.dx + (p.y - f.y) * a.dy;
+      if (t <= 0 || t > s.range + p.r) continue;
+      if (segDist2(p.x, p.y, f.x, f.y, f.x + a.dx * (s.range + p.r), f.y + a.dy * (s.range + p.r)) < (p.r + 2) ** 2) {
+        dist = t + p.r + FIGHTER_R + 6;
+        w.fx("ring", p.x, p.y, p.r + 4, 4);
+        break;
+      }
+    }
+    w.dash(f, a.dx, a.dy, dist, 0.4, { air: true, h: 26 });
+  },
+  deflector(w, f, _a, s) {
+    w.sfx("dome");
+    w.zone(f, {
+      kind: "deflector", x: f.x, y: f.y, r: s.size, delay: 0, dur: 3, tickEvery: 0, follow: f,
+      onTick: (w, z) => {
+        for (const p of w.projs) {
+          if (p.team === z.team) continue;
+          const dx = p.x - z.x, dy = p.y - z.y, d = Math.hypot(dx, dy);
+          if (d > z.r || d < 1) continue;
+          const sp = Math.hypot(p.vx, p.vy);
+          p.vx += (dx / d) * 1400 * DT_PULL;
+          p.vy += (dy / d) * 1400 * DT_PULL;
+          const k = sp / (Math.hypot(p.vx, p.vy) || 1);
+          p.vx *= k;
+          p.vy *= k;
+        }
+      },
+    });
+  },
+  absorb(w, f, _a, s) {
+    f.absorbT = 1.5;
+    w.sfx("singularity");
+    w.zone(f, {
+      kind: "absorb", x: f.x, y: f.y, r: s.size, delay: 0, dur: 1.5, tickEvery: 0, follow: f,
+      onTick: (w, z) => {
+        for (const p of w.projs) {
+          if (p.team === z.team || p.dead) continue;
+          const dx = z.x - p.x, dy = z.y - 4 - p.y, d = Math.hypot(dx, dy);
+          if (d > z.r || d < 1) continue;
+          const sp = Math.hypot(p.vx, p.vy);
+          p.vx = (dx / d) * sp;
+          p.vy = (dy / d) * sp;
+        }
+      },
+    });
+  },
+  magstorm(w, f, a, s) {
+    w.sfx("storm");
+    w.zone(f, {
+      kind: "magstorm", x: a.tx, y: a.ty, r: s.size, delay: 0.6, dur: 0.4,
+      onArm: (w, z) => {
+        w.fx("ring", z.x, z.y, z.r, 4);
+        w.fx("shake", z.x, z.y, 5, 0);
+        w.sfx("chain");
+        for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) {
+          e.shield = 0;
+          e.shieldT = 0;
+          w.damage(f, e, 8, { from: [z.x, z.y] });
+          w.silence(e, 2.5);
+          w.launchUp(e, 1, 30);
+        }
+      },
+    });
+  },
+
+  // ================================================================ Resonix
+  note(w, f, a, s) {
+    const beat = w.onBeat();
+    w.sfx(beat ? "spawn" : "seed");
+    const fire = (x: number, y: number, dx: number, dy: number) =>
+      w.proj(f, {
+        kind: "note", dx, dy, speed: 330, range: s.range, r: 4, dmg: 9, allies: true, from: [x, y],
+        onHit: (w, t) => {
+          const ally = t.team === f.team;
+          const amt = (ally ? 8 : 9) * (beat ? 1.5 : 1);
+          const apply = (k: number) => (t.team === f.team ? w.heal(f, t, amt * k) : w.damage(f, t, amt * k, { from: [x, y] }));
+          apply(1);
+          if (beat) {
+            w.popup(t.x, t.y - 34, "¡A RITMO!", "#ffd23f");
+            // eco: repite la mitad a los 0,5 s
+            w.zone(f, { kind: "puff", x: t.x, y: t.y, r: 4, delay: 0.5, dur: 0.05, onArm: () => !t.dead && apply(0.5) });
+          }
+        },
+      });
+    fire(f.x + a.dx * 6, f.y + a.dy * 6, a.dx, a.dy);
+    // los altavoces repiten la nota contra el enemigo más cercano
+    for (const p of w.props) {
+      if (p.kind !== "speaker" || p.owner !== f || p.dead) continue;
+      let best: Fighter | null = null, bd = s.range * s.range;
+      for (const e of w.fighters) {
+        if (e.team === f.team || !w.targetable(e)) continue;
+        const d = dist2(e.x, e.y, p.x, p.y);
+        if (d < bd && w.clearLine(p.x, p.y, e.x, e.y)) [bd, best] = [d, e];
+      }
+      if (best) {
+        const dx = best.x - p.x, dy = best.y - p.y, l = Math.hypot(dx, dy) || 1;
+        fire(p.x + (dx / l) * 8, p.y + (dy / l) * 8, dx / l, dy / l);
+      }
+    }
+  },
+  speaker(w, f, a) {
+    for (const p of w.props) if (p.kind === "speaker" && p.owner === f) w.breakProp(p);
+    w.sfx("armor");
+    w.addProp(f, { kind: "speaker", x: a.tx, y: a.ty, r: 6, hp: 35, t: 7, onBreak: (w, p) => w.fx("scrap", p.x, p.y, 0, 0) });
+  },
+  shockwave(w, f, a, s) {
+    w.sfx("warcry");
+    w.fx("ring", f.x, f.y, 30, 4);
+    for (const e of w.enemiesIn(f.team, f.x, f.y, 30)) w.knock(e, e.x - f.x, e.y - f.y, 30);
+    w.dash(f, a.dx, a.dy, s.range, 0.22);
+  },
+  lifesong() {
+    // todo va en la canalización (CHANNELS.lifesong)
+  },
+  scream(w, f, a, s) {
+    w.fx("fist", f.x, f.y, angle(a), s.range);
+    w.sfx("warcry");
+    for (const e of coneTargets(w, f, s.range, 1.3)) {
+      w.knock(e, e.x - f.x, e.y - f.y, 50);
+      w.silence(e, 1);
+    }
+  },
+  concert(w, f, _a, s) {
+    w.sfx("garden");
+    w.fx("ring", f.x, f.y, s.size, 4);
+    for (const e of w.enemiesIn(f.team, f.x, f.y, s.size))
+      if (w.ccable(e)) {
+        e.daze = 1.5;
+        w.popup(e.x, e.y - 26, "¡MAREADO!", "#ff3b9e");
+      }
+    w.zone(f, {
+      kind: "concert", x: f.x, y: f.y, r: s.size, delay: 0, dur: 4, tickEvery: 0.1, follow: f,
+      onTick: (w, z) => {
+        for (const al of w.alliesIn(f.team, z.x, z.y, z.r)) {
+          al.haste = Math.max(al.haste, 0.2);
+          al.hasteK = Math.max(al.haste > 0 ? al.hasteK : 0, 0.25);
+          // recargas un 40% más cortas: cada décima corre 0,04 s más
+          for (const sl of ["l2", "a", "x", "y"] as const) if (al.cds[sl] > 0) al.cds[sl] = Math.max(0, al.cds[sl] - 0.067);
+        }
+      },
+    });
+  },
+
+  // ================================================================ Golemax
+  punch(w, f, a, s) {
+    w.fx("slash", f.x, f.y, angle(a), s.range);
+    w.sfx("swing");
+    w.melee(f, s.range, 1.6, 13);
+  },
+  grab(w, f, a, s) {
+    const e = coneTargets(w, f, s.range, 1.4).filter((e) => w.ccable(e)).sort((p, q) => dist2(p.x, p.y, f.x, f.y) - dist2(q.x, q.y, f.x, f.y))[0];
+    w.fx("slash", f.x, f.y, angle(a), s.range);
+    if (!e) {
+      f.cds.l2 = 2;
+      w.sfx("swing");
+      return;
+    }
+    e.cast = null;
+    e.charge = null;
+    e.motion = null;
+    e.heldBy = f;
+    f.carry = { e, t: 1.5 };
+    w.sfx("hook");
+    w.popup(e.x, e.y - 34, "¡AGARRADO!", "#ff8a2b");
+  },
+  unstoppable(w, f, a, s) {
+    f.unstop = 0.45;
+    w.sfx("treads");
+    w.dash(f, a.dx, a.dy, s.range, 0.4, {
+      touch: (e) => {
+        if (w.damage(f, e, 10, { melee: true })) w.knock(e, -a.dy * (Math.random() < 0.5 ? 1 : -1), a.dx, 30);
+        return false;
+      },
+    });
+  },
+  rockpillar(w, f, a) {
+    for (const p of w.props) if (p.kind === "rock" && p.owner === f) w.breakProp(p);
+    w.sfx("slam");
+    w.fx("boom", a.tx, a.ty, 14, 1);
+    w.fx("shake", a.tx, a.ty, 3, 0);
+    w.addProp(f, { kind: "rock", x: a.tx, y: a.ty, r: 10, hp: 80, t: 6, onBreak: (w, p) => w.fx("scrap", p.x, p.y, 0, 0) });
+  },
+  quakeline(w, f, a, s) {
+    w.sfx("quake");
+    w.fx("shake", f.x, f.y, 4, 0);
+    const x2 = f.x + a.dx * s.range, y2 = f.y + a.dy * s.range;
+    w.zone(f, { kind: "quakeline", x: f.x, y: f.y, r: s.size, a: angle(a), len: s.range, delay: 0, dur: 0.5 });
+    for (const e of w.fighters)
+      if (e.team !== f.team && w.targetable(e) && segDist2(e.x, e.y, f.x, f.y, x2, y2) < (s.size + FIGHTER_R) ** 2) {
+        w.damage(f, e, 14, { from: [f.x, f.y] });
+        w.launchUp(e, 0.8, 26);
+      }
+  },
+  titanfist(w, f, a, s) {
+    const dx = a.tx - f.x, dy = a.ty - f.y, d = Math.hypot(dx, dy);
+    w.zone(f, { kind: "meteor", x: a.tx, y: a.ty, r: s.size, delay: 0.7, dur: 0.05 });
+    w.sfx("leap");
+    w.dash(f, d > 1 ? dx : Math.cos(f.face), d > 1 ? dy : Math.sin(f.face), Math.max(d, 0.1), 0.7, {
+      air: true,
+      h: 50,
+      end: () => {
+        w.fx("boom", f.x, f.y, s.size, 1);
+        w.fx("shake", f.x, f.y, 8, 0);
+        w.sfx("slam");
+        for (const e of w.enemiesIn(f.team, f.x, f.y, s.size)) {
+          w.damage(f, e, 30, { from: [f.x, f.y] });
+          w.launchUp(e, 1, 32);
+        }
+        w.blastProps(f.x, f.y, s.size, 30, f);
+        w.zone(f, {
+          kind: "crack", x: f.x, y: f.y, r: s.size, delay: 0, dur: 3, tickEvery: 0.2,
+          onTick: (w, z) => {
+            for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) w.slowFor(e, 0.3, 0.3);
+          },
+        });
+      },
+    });
+  },
 };
 
 /** Explosión de Ignis: más fuerte cuanto más calor lleve encima. */
@@ -1148,6 +1485,46 @@ const DT_PULL = 1 / 60;
 
 /** Skills canalizadas: efecto en cada paso del lanzamiento. */
 export const CHANNELS: Record<string, ChannelFn> = {
+  /** Rayo solar: sigue a la mira a 90 px/s mientras se mantenga. */
+  sunray(w, f, a, dt) {
+    let z = w.zones.find((q) => q.kind === "sunray" && q.owner === f && !q.dead);
+    if (!z) {
+      z = w.zone(f, {
+        kind: "sunray", x: a.tx, y: a.ty, r: f.def.skills.b.size, delay: 0, dur: f.def.skills.b.cast + 0.1, tickEvery: 0.2,
+        onTick: (w, z) => {
+          if (f.cast?.slot !== "b") {
+            z.dead = true;
+            return;
+          }
+          for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) w.damage(f, e, 5, { from: [z.x, z.y], dot: true });
+          w.blastProps(z.x, z.y, z.r, 5, null);
+        },
+      });
+      w.sfx("ray");
+    }
+    const dx = a.tx - z.x, dy = a.ty - z.y, d = Math.hypot(dx, dy);
+    if (d > 1) {
+      const step = Math.min(d, 90 * dt);
+      z.x += (dx / d) * step;
+      z.y += (dy / d) * step;
+    }
+    return true;
+  },
+  /** Canción de vida: cura y protege a los aliados cercanos mientras suena. */
+  lifesong(w, f, _a, dt) {
+    const s = f.def.skills.x;
+    f.chan.t -= dt;
+    if (f.chan.t <= 0) {
+      f.chan.t += 0.2;
+      w.fx("ring", f.x, f.y, s.size, 3);
+      for (const al of w.alliesIn(f.team, f.x, f.y, s.size)) {
+        w.heal(f, al, 2, true);
+        al.guard = Math.max(al.guard, 0.3);
+        al.guardK = Math.max(al.guardK, 0.2);
+      }
+    }
+    return true;
+  },
   /** Cañón de riel: línea de aviso que ven todos y que sigue la mira. */
   railgun(w, f, a) {
     let z = w.zones.find((q) => q.kind === "railaim" && q.owner === f && !q.dead);

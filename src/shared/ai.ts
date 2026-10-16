@@ -31,7 +31,7 @@ const LEVER_USE = [0.05, 0.25, 0.5];
 /** velocidad media de proyectil para anticipar */
 const LEAD_SPEED: Record<string, number> = {
   revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330,
-  arrow: 560, rotary: 440, boomerang: 340, rifle: 820, grenade: 300,
+  arrow: 560, rotary: 440, boomerang: 340, rifle: 820, grenade: 300, magpulse: 330, note: 330,
 };
 
 export function botThink(w: World, f: Fighter, dt: number) {
@@ -218,8 +218,15 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
     || enemies.some((e) => e.cast && dist2(e.x, e.y, f.x, f.y) < 60 * 60);
   const predict = (time: number) => [t.x + t.vx * time, t.y + t.vy * time] as const;
 
-  // soporte: la semilla también cura, así que se dispara al aliado herido
-  if (f.def.skills.r2.id === "seed" && lowAlly !== f && lowK < 0.75 && w.canUse(f, "r2")
+  // canalizaciones que hay que mantener (Rayo solar): seguir apuntando al objetivo
+  if (f.cast && f.def.skills[f.cast.slot].holdCast) {
+    b.wantB = SLOT_BIT[f.cast.slot];
+    b.ax = t.x + t.vx * 0.3;
+    b.ay = t.y + t.vy * 0.3;
+    return;
+  }
+  // soporte: la semilla (y la nota) también curan, así que se disparan al aliado herido
+  if ((f.def.skills.r2.id === "seed" || f.def.skills.r2.id === "note") && lowAlly !== f && lowK < 0.75 && w.canUse(f, "r2")
     && dist2(lowAlly.x, lowAlly.y, f.x, f.y) < f.def.skills.r2.range ** 2 * 0.8 && w.clearLine(f.x, f.y, lowAlly.x, lowAlly.y) && R.next() < 0.6) {
     b.wantB = SLOT_BIT.r2;
     b.ax = lowAlly.x + lowAlly.vx * 0.3;
@@ -285,6 +292,10 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
         aim = [lowAlly.x + lowAlly.vx * 0.5, lowAlly.y + lowAlly.vy * 0.5];
         break;
       case "cc":
+        if (s.id === "polarity") {
+          ok = enemies.some((e) => e.polT > 0.2 && e.polBy === f);
+          break;
+        }
         ok = dist <= s.range * 0.9 && (s.aim === "self" || clear);
         if (s.aim !== "self") aim = predict(dist / 300);
         break;

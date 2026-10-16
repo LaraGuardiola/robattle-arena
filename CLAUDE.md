@@ -26,7 +26,11 @@
   `trapDodge` para la IA); dañan a todos por igual y siempre avisan antes.
 - Mecánicas de la tanda 1 (reutilizables): `SkillDef.charge` (carga al soltar),
   `charges`, `back`; `ChampDef.heat`; proyectiles con `ret` (vuelven),
-  `bounces`, `ghost` y `carry`. Ver `docs/ROADMAP.md` §0.
+  `bounces`, `ghost` y `carry`; tanda 2: `hold`, ceguera, `burn`, `sticky`,
+  `fuse`/`fric`; tanda 3: `w.beam`, espejos, `holdCast`, polaridad, ritmo
+  (`w.onBeat`), `daze`, agarre (`carry`/`heldBy`). Ver `docs/ROADMAP.md` §0.
+- Para aislar el equilibrio de un campeón sirve desactivar skills a mano y
+  comparar duelos: la mayoría de desajustes vienen de la IA, no de los números.
 - La IA de los bots (`src/shared/ai.ts`) usa la pista `SkillDef.ai` de cada skill.
   Tras tocar equilibrio, pasar `bun run sim` (partidas bot contra bot con
   porcentajes de victoria 1v1 y 2v2 y recuento de skills usadas).

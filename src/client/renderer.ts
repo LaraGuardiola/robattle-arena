@@ -96,6 +96,7 @@ export class Renderer {
     switch (kind) {
       case "slash": case "claw": push(0.16); break;
       case "quake": push(0.35); this.burst(x + Math.cos(a) * b * 0.6, y + Math.sin(a) * b * 0.6, 14, "#8c6c48", 80, 2); this.kick(3); break;
+      case "beam": push(0.18); this.burst(a, b + 6, 3, "#bff6ff", 50); break;
       case "flame":
         for (let k = 0; k < 5 && this.parts.length < 700; k++) {
           const an = a + (Math.random() - 0.5) * 0.9, v = b * (2.2 + Math.random() * 1.5);
@@ -419,6 +420,7 @@ export class Renderer {
     let spr = f.fl ? robotSprite(f.champ, pose, left, true) : robotSprite(f.champ, pose, left);
     if (f.st & ST.invuln && Math.floor(now * 16) % 2) spr = robotTint(f.champ, pose, left, "#fff6c8");
     if (stealth) ctx.globalAlpha = 0.35;
+    if (f.st & ST.refract) ctx.globalAlpha = 0.45 + Math.sin(now * 20) * 0.1;
     if (f.st & ST.mist) {
       // niebla: nube rojiza en lugar del robot
       for (let k = 0; k < 6; k++) {
@@ -543,6 +545,14 @@ export class Renderer {
       ctx.fillStyle = Math.floor(now * 10) % 2 ? "#ff3b4e" : "#ffd23f";
       ctx.fillRect(px - 1, py - 9, 3, 2);
     }
+    if (f.st & ST.daze) {
+      const k = (now * 4) % 1;
+      this.label(px - 6 + Math.round(k * 12), top - 4, "@", "#ff3b9e");
+    }
+    if (f.st & (ST.polP | ST.polM)) {
+      const plus = !!(f.st & ST.polP);
+      this.label(px, top - 10, plus ? "+" : "-", plus ? "#ff3b4e" : "#4fb4ff");
+    }
     if (f.st & ST.empower && Math.random() < 0.25) this.sparkle(f.x, f.y, "#b8ff5f", 1);
     if (f.st & ST.slow && Math.random() < 0.15) this.parts.push({ x: f.x + (Math.random() - 0.5) * 10, y: f.y, z: 10, vx: 0, vy: 0, vz: -10, life: 0.4, max: 0.4, c: "#7fe3ff", s: 1, g: 0 });
     if (f.st & ST.hot && Math.random() < 0.2) this.sparkle(f.x, f.y, "#5fe08a", 1);
@@ -631,6 +641,30 @@ export class Renderer {
       this.shadow(px, py + 1, 6);
       ctx.drawImage(spr, px - (spr.width >> 1), py - spr.height + 2);
       if (hp < 0.6 && Math.random() < 0.3) this.parts.push({ x, y, z: 12, vx: 0, vy: 0, vz: 15, life: 0.4, max: 0.4, c: "#ff8a2b", s: 1, g: 0 });
+      return;
+    }
+    if (kind === "mirror") {
+      const a = pp[i + 5]! / 100, len = pp[i + 8]!;
+      const c = Math.cos(a) * len / 2, sn = Math.sin(a) * len / 2;
+      const glint = Math.floor(_now * 3) % 4;
+      for (const [col, w, up] of [["#17121f", 5, 0], ["#5a6070", 3, 0], ["#bff6ff", 2, 4], ["#ffffff", 1, 5 + glint]] as const) {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = w;
+        ctx.globalAlpha = hp < 0.4 && col === "#bff6ff" ? 0.5 : 1;
+        ctx.beginPath();
+        ctx.moveTo(X(x - c), Y(y - sn) - 4 - up);
+        ctx.lineTo(X(x + c), Y(y + sn) - 4 - up);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      return;
+    }
+    if (kind === "speaker" || kind === "rock") {
+      const spr = iconSprite(kind === "speaker" ? "speaker" : "rockpillar");
+      this.shadow(px, py + 1, r);
+      const scale = kind === "rock" ? 2 : 1;
+      ctx.drawImage(spr, px - (spr.width * scale >> 1), py - spr.height * scale + 2, spr.width * scale, spr.height * scale);
+      if (kind === "speaker" && Math.random() < 0.08) this.sparkle(x, y - 8, "#ff3b9e", 1);
       return;
     }
     if (kind === "crate") {
@@ -1371,6 +1405,84 @@ export class Renderer {
           this.number(px, py - 26, Math.ceil(2.5 * (1 - prog)), "#ffd23f", 2);
           break;
         }
+        case "sunray": {
+          // columna de luz desde el cielo
+          const top = py - 160;
+          for (const [col, w, al] of [["#ffd23f", r * 1.6, 0.25], ["#fff6c8", r * 0.9, 0.6], ["#ffffff", 3, 0.9]] as const) {
+            ctx.globalAlpha = al;
+            ctx.fillStyle = col;
+            ctx.fillRect(px - w / 2, top, w, py - top);
+          }
+          ctx.globalAlpha = 1;
+          this.disc(px, py, r, "#ffd23f", 0.35);
+          if (Math.random() < 0.8) this.burst(x, y, 1, "#fff6c8", 60);
+          break;
+        }
+        case "deflector":
+        case "absorb": {
+          const col = kind === "absorb" ? "#ff3b4e" : "#4fb4ff";
+          ctx.globalAlpha = 0.5;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.ellipse(px, py - 4, r, r * 0.8, 0, (kind === "absorb" ? -1 : 1) * now * 3, (kind === "absorb" ? -1 : 1) * now * 3 + TAU);
+          ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.globalAlpha = 1;
+          this.disc(px, py - 4, r, col, 0.08);
+          break;
+        }
+        case "magstorm": {
+          if (!armed) {
+            this.disc(px, py, r, "#4fb4ff", 0.1 + prog * 0.15);
+            this.disc(px, py, r * prog, "#ff3b4e", 0.2);
+            ctx.strokeStyle = Math.floor(now * 12) % 2 ? "#4fb4ff" : "#ff3b4e";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+          } else this.disc(px, py, r * (1 - prog * 0.5), "#bff6ff", 0.3 * (1 - prog));
+          break;
+        }
+        case "lifesong":
+        case "concert": {
+          const col = kind === "lifesong" ? "#5fe08a" : "#ff3b9e";
+          ctx.globalAlpha = 0.3;
+          ctx.strokeStyle = col;
+          ctx.lineWidth = 1;
+          const pulse = 0.85 + ((now * 2) % 1) * 0.15;
+          ctx.beginPath();
+          ctx.ellipse(px, py, r * pulse, r * pulse * 0.8, 0, 0, TAU);
+          ctx.stroke();
+          ctx.globalAlpha = 1;
+          if (Math.random() < 0.3) {
+            const an = Math.random() * TAU, rr = Math.random() * r;
+            this.parts.push({ x: x + Math.cos(an) * rr, y: y + Math.sin(an) * rr * 0.8, z: 4, vx: 0, vy: 0, vz: 18, life: 0.6, max: 0.6, c: Math.random() < 0.5 ? col : "#7a3aff", s: 2, g: 0 });
+          }
+          break;
+        }
+        case "quakeline":
+        case "crack": {
+          const fade = 1 - prog;
+          ctx.globalAlpha = fade;
+          ctx.fillStyle = "#17121f";
+          if (kind === "quakeline") {
+            for (let k = 0; k < len; k += 4) {
+              const j = Math.round(Math.sin(k * 1.7) * 3);
+              ctx.fillRect(X(x + Math.cos(a) * k - Math.sin(a) * j), Y(y + Math.sin(a) * k + Math.cos(a) * j), 3, 2);
+            }
+            if (Math.random() < 0.7) this.burst(x + Math.cos(a) * Math.random() * len, y + Math.sin(a) * Math.random() * len, 2, "#8c6c48", 70, 2);
+          } else {
+            for (let k = 0; k < 8; k++) {
+              const an = (k / 8) * TAU;
+              for (let d = 6; d < r; d += 4) ctx.fillRect(X(x + Math.cos(an + d * 0.05) * d), Y(y + Math.sin(an + d * 0.05) * d * 0.8), 2, 2);
+            }
+            this.disc(px, py, r, "#8c6c48", 0.15 * fade);
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
         case "rain": {
           if (!armed) {
             this.disc(px, py, r, "#b8ff5f", 0.08 + prog * 0.12);
@@ -1491,6 +1603,20 @@ export class Renderer {
           ctx.arc(px, py + 6, f.b * (0.4 + k * 0.6), f.a - half, f.a + half);
           ctx.closePath();
           ctx.fill();
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "beam": {
+          // haz de luz: de (x, y) a (a, b)
+          for (const [col, w] of [["#6ac8e0", 4], ["#bff6ff", 2], ["#ffffff", 1]] as const) {
+            ctx.globalAlpha = 1 - k;
+            ctx.strokeStyle = col;
+            ctx.lineWidth = w;
+            ctx.beginPath();
+            ctx.moveTo(X(f.x), Y(f.y));
+            ctx.lineTo(X(f.a), Y(f.b));
+            ctx.stroke();
+          }
           ctx.globalAlpha = 1;
           break;
         }

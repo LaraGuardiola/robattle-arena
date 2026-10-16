@@ -18,6 +18,7 @@ export const ST = {
   stun: 1, root: 2, slow: 4, silence: 8, shield: 16, air: 32, stealth: 64, sleep: 128,
   counter: 256, block: 512, haste: 1024, dead: 2048, invuln: 4096, hot: 8192,
   fear: 16384, deflect: 32768, mist: 65536, spin: 131072, anchor: 262144, mark: 524288, empower: 1048576, blind: 2097152, burn: 4194304, scope: 8388608, guard: 16777216, sticky: 33554432,
+  refract: 67108864, daze: 134217728, polP: 268435456, polM: 536870912, held: 1073741824,
 } as const;
 
 export interface FSnap {
@@ -63,16 +64,18 @@ export const ZN_STRIDE = 9;
 export const PROJ_KINDS = ["bullet", "snipe", "shellx", "fireball", "seed", "seedHeal", "pollen", "hook", "disable", "spark",
   "wave", "pellet", "ball", "bat", "zap", "shuriken", "kunai",
   "arrow", "arrowFull", "arrowBig", "pin", "gbullet", "tracer", "boomer", "chakram", "bigboomer",
-  "rifle", "rifleScope", "grapple", "grenade", "limpet", "napalmJar"] as const;
+  "rifle", "rifleScope", "grapple", "grenade", "limpet", "napalmJar",
+  "prismOrb", "magPlus", "magMinus", "note", "noteHeal"] as const;
 export const ZONE_KINDS = ["firestorm", "trap", "firewall", "bloom", "garden", "meteor", "puff", "ray",
   "lob", "turret", "dome", "smoke", "bloodmoon", "singularity", "whirl", "dance",
   // trampas de las palancas (equipo -1: dañan a todos) y columnas que suben
   "geyser", "press", "laser", "magnet", "pulse", "rise",
   "rain", "blades", "hawk",
-  "railaim", "rail", "tripwire", "flare", "napalm", "flametrail", "heatbomb", "firesuit", "firering", "jmine", "nuke", "radiation"] as const;
+  "railaim", "rail", "tripwire", "flare", "napalm", "flametrail", "heatbomb", "firesuit", "firering", "jmine", "nuke", "radiation",
+  "sunray", "deflector", "absorb", "magstorm", "lifesong", "concert", "quakeline", "crack", "titan"] as const;
 /** Objeto con vida: [id, tipo, x, y, r, ángulo*100, vida 0..100, equipo, largo] */
 export const PP_STRIDE = 9;
-export const PROP_KINDS = ["crate", "barricade", "barrel"] as const;
+export const PROP_KINDS = ["crate", "barricade", "barrel", "mirror", "speaker", "rock"] as const;
 /** Palanca: [x, y, estado (0 lista, 1 recargando, 2 bloqueada), progreso 0..100] */
 export const LV_STRIDE = 4;
 

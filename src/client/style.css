@@ -316,3 +316,6 @@ input:focus { border-color: var(--yellow); }
 #res-table tr.t0 td:first-child { border-left: 4px solid var(--t0); }
 #res-table tr.t1 td:first-child { border-left: 4px solid var(--t1); }
 #res-table .mvp { color: var(--yellow); font-weight: 700; }
+
+/* metrónomo de Resonix: el básico brilla en el pulso */
+.sks .s.beat { box-shadow: 0 0 0 2px #ffd23f, 0 0 10px #ff3b9e; }

@@ -136,6 +136,23 @@ export interface Fighter {
   absorbed: number;
   /** va más lento por su propia arma (lanzallamas) */
   selfSlow: number;
+  /** refracción: los proyectiles le atraviesan */
+  refract: number;
+  /** imán absorbente: los proyectiles enemigos que le tocan dan escudo en vez de daño */
+  absorbT: number;
+  /** mareo: controles invertidos */
+  daze: number;
+  /** polaridad magnética (+1 / -1) puesta por polBy */
+  pol: number;
+  polT: number;
+  polBy: Fighter | null;
+  /** lleva a alguien agarrado (Golemax) / está agarrado por alguien */
+  carry: { e: Fighter; t: number } | null;
+  heldBy: Fighter | null;
+  /** imparable: ni le aturden ni le empujan */
+  unstop: number;
+  /** botones que se han pulsado este paso (flanco) */
+  pressed: number;
   /** bomba pegada: explota al acabar; si el portador toca a un aliado suyo, salta */
   sticky: { t: number; src: Fighter; boom: (w: World, at: Fighter) => void } | null;
   stats: { dmg: number; heal: number; kos: number };
@@ -233,6 +250,8 @@ export interface Prop {
   solid: boolean;
   /** para los proyectiles */
   stopsProj: boolean;
+  /** espejo: refleja proyectiles y rayos (de cualquiera) */
+  reflect?: boolean;
   onBreak?: (w: World, p: Prop) => void;
   dead: boolean;
 }
@@ -294,6 +313,8 @@ export class World {
   levers: Lever[] = [];
   /** recarga compartida de las palancas */
   leverCd = 0;
+  /** objeto contra el que ha chocado el último proyectil (wallNormal) */
+  hitProp: Prop | null = null;
   risen = false;
   orb: { x: number; y: number; hp: number; last: number } | null = null;
   orbDone = false;
@@ -329,6 +350,7 @@ export class World {
         charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammo: {}, ammoLock: 0,
         dmgUp: 0, dmgUpK: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
         hold: null, holdT: 0, blind: 0, burns: [], guard: 0, guardK: 0, absorbed: 0, selfSlow: 0, sticky: null,
+        refract: 0, daze: 0, pol: 0, polT: 0, polBy: null, carry: null, heldBy: null, unstop: 0, pressed: 0, absorbT: 0,
         stats: { dmg: 0, heal: 0, kos: 0 },
         bot: s.human ? null : { diff: s.diff ?? 1, think: 0, strafe: this.rng.next() < 0.5 ? 1 : -1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 },
       };
@@ -359,6 +381,7 @@ export class World {
         charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammoLock: 0,
         dmgUp: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
         hold: null, holdT: 0, blind: 0, burns: [], guard: 0, absorbed: 0, selfSlow: 0, sticky: null,
+        refract: 0, daze: 0, pol: 0, polT: 0, polBy: null, carry: null, heldBy: null, unstop: 0, absorbT: 0,
       });
       // la energía se conserva entre rondas (como en Battlerite), las recargas no
       for (const s of SLOTS) {
@@ -619,7 +642,7 @@ export class World {
   }
 
   canAct(f: Fighter) {
-    return !f.dead && f.stun <= 0 && f.sleep <= 0 && f.fear <= 0 && f.lock <= 0 && f.mist <= 0 && f.spin <= 0 && !f.motion;
+    return !f.dead && f.stun <= 0 && f.sleep <= 0 && f.fear <= 0 && f.lock <= 0 && f.mist <= 0 && f.spin <= 0 && !f.motion && !f.heldBy;
   }
 
   canUse(f: Fighter, slot: Slot) {
@@ -632,21 +655,43 @@ export class World {
     if (slot === "r2" && f.overheat > 0) return false;
     if (slot !== "r2" && f.anchor > 0) return false;
     if (slot !== "r2" && f.silence > 0) return false;
-    if ((s.aim === "dash" || s.id === "blink" || s.id === "meteor") && f.root > 0) return false;
+    if ((s.aim === "dash" || s.id === "blink" || s.id === "meteor" || s.id === "glint" || s.id === "titanfist") && f.root > 0) return false;
     return true;
   }
 
   updateFighter(f: Fighter, dt: number) {
     // ---- estados
     const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block" | "fear" | "deflect" | "mist" | "spin" | "lock"
-      | "overheat" | "ammoLock" | "dmgUp" | "markT" | "anchor" | "catchBuff" | "blind" | "guard" | "selfSlow") => {
+      | "overheat" | "ammoLock" | "dmgUp" | "markT" | "anchor" | "catchBuff" | "blind" | "guard" | "selfSlow"
+      | "refract" | "daze" | "polT" | "unstop" | "absorbT") => {
       if (f[k] > 0) f[k] = Math.max(0, f[k] - dt);
     };
     dec("stun"); dec("root"); dec("silence"); dec("sleep"); dec("slow"); dec("haste");
     dec("invuln"); dec("stealth"); dec("counter"); dec("block");
     dec("fear"); dec("deflect"); dec("mist"); dec("spin"); dec("lock");
     dec("overheat"); dec("ammoLock"); dec("dmgUp"); dec("markT"); dec("anchor"); dec("catchBuff");
-    dec("blind"); dec("guard"); dec("selfSlow");
+    dec("blind"); dec("guard"); dec("selfSlow"); dec("refract"); dec("daze"); dec("polT"); dec("unstop"); dec("absorbT");
+    if (f.polT <= 0) f.pol = 0;
+    // agarrado: va encima de quien le lleva
+    if (f.heldBy) {
+      const g = f.heldBy;
+      if (g.dead || g.carry?.e !== f) f.heldBy = null;
+      else {
+        f.x = g.x + Math.cos(g.face) * 4;
+        f.y = g.y + 1;
+        f.z = 20;
+        f.cast = null;
+        f.charge = null;
+        f.moving = false;
+        return;
+      }
+    }
+    if (f.carry) {
+      f.carry.t -= dt;
+      const e = f.carry.e;
+      if (e.dead || e.heldBy !== f) f.carry = null;
+      else if (f.carry.t <= 0) this.throwHeld(f);
+    }
     for (const b of f.burns) {
       b.acc += b.dps * Math.min(dt, b.t);
       b.t -= dt;
@@ -756,7 +801,8 @@ export class World {
         f.cast.t += dt;
         const cs = f.def.skills[f.cast.slot];
         const ch = CHANNELS[cs.id];
-        if (ch && !ch(this, f, this.aimOf(f, cs), dt)) f.cast = null;
+        if (cs.holdCast && f.cast.t > 0.25 && !(f.input.b & SLOT_BIT[f.cast.slot])) f.cast = null;
+        else if (ch && !ch(this, f, this.aimOf(f, cs), dt)) f.cast = null;
         if (f.cast && f.cast.t >= f.cast.total) {
           const slot = f.cast.slot;
           f.cast = null;
@@ -788,6 +834,9 @@ export class World {
     // ---- elegir skill (botones mantenidos + un pequeño búfer para toques cortos)
     const b = f.input.b, pressed = b & ~f.prevB;
     f.prevB = b;
+    f.pressed = pressed;
+    // agarre: volver a pulsar L2 lanza (los bots lanzan al rato)
+    if (f.carry && ((pressed & SLOT_BIT.l2 && f.carry.t < 1.4) || (f.bot && f.carry.t < 1))) this.throwHeld(f);
     for (const s of SLOTS)
       if (s !== "r2" && s !== "l2" && pressed & SLOT_BIT[s]) {
         f.buffer = s;
@@ -817,6 +866,10 @@ export class World {
     if (f.block > 0) sp *= 0.5;
     if (f.spin > 0) sp *= 0.75;
     let { mx, my } = f.input;
+    if (f.daze > 0) {
+      mx = -mx;
+      my = -my;
+    }
     if (f.fear > 0) {
       // huye de quien le ha asustado
       mx = f.x - f.fearX;
@@ -902,7 +955,7 @@ export class World {
 
   /** Los robots no se atraviesan entre sí (empuje suave). */
   separate() {
-    const L = this.fighters.filter((f) => !f.dead && !f.motion?.air);
+    const L = this.fighters.filter((f) => !f.dead && !f.motion?.air && !f.heldBy && !f.carry);
     for (let i = 0; i < L.length; i++)
       for (let j = i + 1; j < L.length; j++) {
         const a = L[i]!, b = L[j]!;
@@ -1008,6 +1061,78 @@ export class World {
     this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, SHIELD_POPUP);
   }
 
+  /** ¿Estamos en el pulso de la música de la arena? (±90 ms) */
+  onBeat() {
+    if (this.phase !== "fight") return false;
+    const k = (this.pt * this.arenaDef.bpm) / 60;
+    return Math.abs(k - Math.round(k)) * (60 / this.arenaDef.bpm) < 0.09;
+  }
+
+  /**
+   * Rayo instantáneo que avanza en pasos de 3 px: rebota `bounces` veces en
+   * columnas, objetos y borde (los espejos lo reflejan siempre) y para en el
+   * primer enemigo. Devuelve el enemigo alcanzado (o null) y si había rebotado.
+   */
+  beam(f: Fighter, x: number, y: number, dx: number, dy: number, len: number, bounces: number, fxKind = "beam") {
+    let sx = x, sy = y, bounced = false;
+    for (let d = 0; d < len; d += 3) {
+      x += dx * 3;
+      y += dy * 3;
+      for (const e of this.fighters)
+        if (e.team !== f.team && this.targetable(e) && e.refract <= 0 && dist2(e.x, e.y - 4, x, y) < (FIGHTER_R + 2) ** 2) {
+          this.fx(fxKind, sx, sy - 6, x, y - 6);
+          return { e, bounced, x, y };
+        }
+      if (this.orb && dist2(this.orb.x, this.orb.y - 4, x, y) < 81) {
+        this.hitOrb(f, 8);
+        break;
+      }
+      const n = this.wallNormal({ x, y, r: 2, ghost: false, orbDmg: 6 } as Proj);
+      if (n) {
+        if (bounces <= 0 && !this.hitProp?.reflect) break;
+        if (!this.hitProp?.reflect) bounces--;
+        this.fx(fxKind, sx, sy - 6, x, y - 6);
+        x -= dx * 3;
+        y -= dy * 3;
+        const dot = dx * n[0] + dy * n[1];
+        dx -= 2 * dot * n[0];
+        dy -= 2 * dot * n[1];
+        sx = x;
+        sy = y;
+        bounced = true;
+      }
+    }
+    this.fx(fxKind, sx, sy - 6, x, y - 6);
+    return { e: null, bounced, x, y };
+  }
+
+  /** Golemax suelta (lanza) a quien lleva agarrado hacia su mira. */
+  throwHeld(f: Fighter) {
+    const c = f.carry;
+    if (!c) return;
+    f.carry = null;
+    const e = c.e;
+    e.heldBy = null;
+    e.z = 0;
+    if (e.dead) return;
+    this.moveTo(e, f.x, f.y, true);
+    let a = this.aimOf(f, f.def.skills.l2);
+    if (f.bot) {
+      // los bots lo estampan contra la columna más cercana o, si no hay, hacia el borde
+      const p = this.pillars.reduce<Pillar | null>((m, q) => (dist2(q.x, q.y, f.x, f.y) < (m ? dist2(m.x, m.y, f.x, f.y) : 130 * 130) ? q : m), null);
+      const tx = p ? p.x : f.x * 2, ty = p ? p.y : f.y * 2, l = Math.hypot(tx - f.x, ty - f.y) || 1;
+      a = { ...a, dx: (tx - f.x) / l, dy: (ty - f.y) / l };
+    }
+    this.sfx("swing");
+    this.damage(f, e, 14, { from: [f.x, f.y], melee: true });
+    this.knock(e, a.dx, a.dy, 120, 0.4, () => {
+      this.fx("boom", e.x, e.y - 4, 14, 0);
+      this.fx("shake", e.x, e.y, 5, 0);
+      this.sfx("slam");
+      this.stun(e, 1.2);
+    });
+  }
+
   /** Quema: daño por segundo (no se acumula con la misma fuente; renueva). */
   burn(t: Fighter, src: Fighter | null, dps: number, dur: number) {
     if (t.dead) return;
@@ -1078,7 +1203,7 @@ export class World {
     t.slow = Math.max(t.slow, d);
   }
   ccable(t: Fighter) {
-    return !t.dead && t.invuln <= 0 && !t.motion?.air;
+    return !t.dead && t.invuln <= 0 && !t.motion?.air && t.unstop <= 0 && !t.heldBy;
   }
 
   /** Empuja a un robot (interrumpe lo que esté lanzando). */
@@ -1145,10 +1270,10 @@ export class World {
   }
 
   // ============================================================ objetos
-  addProp(owner: Fighter | null, o: { kind: Prop["kind"]; x: number; y: number; r: number; hp: number; a?: number; len?: number; t?: number; solid?: boolean; stopsProj?: boolean; team?: number; onBreak?: Prop["onBreak"] }) {
+  addProp(owner: Fighter | null, o: { kind: Prop["kind"]; x: number; y: number; r: number; hp: number; a?: number; len?: number; t?: number; solid?: boolean; stopsProj?: boolean; reflect?: boolean; team?: number; onBreak?: Prop["onBreak"] }) {
     const p: Prop = {
       id: this.nextId++, kind: o.kind, owner, team: o.team ?? owner?.team ?? -1, x: o.x, y: o.y, r: o.r, a: o.a ?? 0, len: o.len ?? 0,
-      hp: o.hp, maxHp: o.hp, t: o.t ?? Infinity, solid: o.solid ?? true, stopsProj: o.stopsProj ?? true, onBreak: o.onBreak, dead: false,
+      hp: o.hp, maxHp: o.hp, t: o.t ?? Infinity, solid: o.solid ?? true, stopsProj: o.stopsProj ?? true, reflect: o.reflect, onBreak: o.onBreak, dead: false,
     };
     this.props.push(p);
     if (p.solid) for (const f of this.fighters) if (!f.dead && !f.motion?.air) this.moveTo(f, f.x, f.y, true);
@@ -1280,7 +1405,7 @@ export class World {
         for (const e of this.fighters) {
           if (e.dead || p.hit.has(e.id) || e === p.owner) continue;
           if (e.team === p.team && !p.allies) continue;
-          if (e.motion?.air) continue;
+          if (e.motion?.air || (e.refract > 0 && e.team !== p.team)) continue;
           if (dist2(e.x, e.y - 4, p.x, p.y) > (FIGHTER_R + p.r + 1) ** 2) continue;
           if (e.deflect > 0 && e.team !== p.team && Math.abs(angleDiff(e.face, Math.atan2(p.y - e.y, p.x - e.x))) < 1.35) {
             // guardia: el proyectil vuelve contra quien lo lanzó
@@ -1294,6 +1419,15 @@ export class World {
             this.fx("deflect", p.x, p.y, Math.atan2(p.vy, p.vx), 0);
             this.sfx("block");
             this.popup(e.x, e.y - 22, "¡DEVUELTO!", "#7fe3ff");
+            break;
+          }
+          if (e.absorbT > 0 && e.team !== p.team) {
+            p.dead = true;
+            e.shield = Math.min(30, e.shield + 6);
+            e.shieldT = Math.max(e.shieldT, 3);
+            e.energy = Math.min(ENERGY_MAX, e.energy + 5);
+            this.fx("sap", e.x, e.y, 0, 0);
+            this.sfx("orbhit");
             break;
           }
           p.hit.add(e.id);
@@ -1338,7 +1472,7 @@ export class World {
                 break;
               }
             }
-        if (n && p.bounces > 0) {
+        if (n && (p.bounces > 0 || this.hitProp?.reflect)) {
           // rebote: refleja la velocidad respecto a la normal y vuelve a poder golpear
           p.x -= p.vx * sdt;
           p.y -= p.vy * sdt;
@@ -1347,7 +1481,7 @@ export class World {
             p.vx -= 2 * dot * n[0];
             p.vy -= 2 * dot * n[1];
           }
-          p.bounces--;
+          if (!this.hitProp?.reflect) p.bounces--;
           p.hit.clear();
           this.fx("spark", p.x, p.y, 0, 0);
           this.sfx("ricochet");
@@ -1376,6 +1510,7 @@ export class World {
 
   /** Normal de la superficie con la que choca el proyectil (columna, objeto o borde), o null. */
   wallNormal(p: Proj): [number, number] | null {
+    this.hitProp = null;
     const unit = (x: number, y: number): [number, number] => {
       const l = Math.hypot(x, y) || 1;
       return [x / l, y / l];
@@ -1386,7 +1521,8 @@ export class World {
         if (q.dead || !q.stopsProj) continue;
         const [qx, qy] = this.propPoint(q, p.x, p.y);
         if (dist2(qx, qy, p.x, p.y) < (q.r + p.r) ** 2) {
-          this.hurtProp(q, p.orbDmg || 6);
+          this.hitProp = q;
+          if (!q.reflect) this.hurtProp(q, p.orbDmg || 6);
           return unit(p.x - qx, p.y - qy);
         }
       }
@@ -1496,6 +1632,11 @@ export class World {
       if (a.hold) st |= ST.scope;
       if (a.guard > 0) st |= ST.guard;
       if (a.sticky) st |= ST.sticky;
+      if (a.refract > 0) st |= ST.refract;
+      if (a.daze > 0) st |= ST.daze;
+      if (a.pol > 0) st |= ST.polP;
+      if (a.pol < 0) st |= ST.polM;
+      if (a.heldBy) st |= ST.held;
       const cs = a.cast ? SLOTS.indexOf(a.cast.slot) : a.charge ? SLOTS.indexOf(a.charge.slot) : -1;
       const cp = a.cast ? Math.round((a.cast.t / a.cast.total) * 100) : a.charge ? Math.round((a.charge.t / a.charge.max) * 100) : 0;
       const snap: FSnap = {

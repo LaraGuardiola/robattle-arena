@@ -826,6 +826,11 @@ function updateHud(s: Snap, dt: number) {
         n.textContent = am > 0 ? `x${am}` : timer;
       }
       el.classList.toggle("busy", f.cs === i);
+      // metrónomo: el básico de Resonix se ilumina en el pulso (mismo cálculo que World.onBeat)
+      if (sl === "r2" && f.champ === "resonix") {
+        const bpm = ARENAS[s.arena]?.bpm ?? 120, k = (s.pt * bpm) / 60;
+        el.classList.toggle("beat", s.phase === "fight" && Math.abs(k - Math.round(k)) * (60 / bpm) < 0.09);
+      }
       el.classList.toggle("off", (silenced && sl !== "r2") || (sl === "r2" && (f.ht ?? 0) >= 1000));
     });
   }
