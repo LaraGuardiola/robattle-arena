@@ -165,6 +165,8 @@ export function trapGood(w: World, f: Fighter): boolean {
   }
 }
 
+const AVOID = new Set<Zone["kind"]>(["rain", "napalm", "nuke", "radiation", "flametrail", "heatbomb"]);
+
 /** Dirección para salir de una trampa avisada (o null si no hay peligro). */
 export function trapDodge(w: World, f: Fighter): [number, number] | null {
   const away = (x: number, y: number): [number, number] => {
@@ -172,8 +174,8 @@ export function trapDodge(w: World, f: Fighter): [number, number] | null {
     return d < 1 ? [-f.x / (Math.hypot(f.x, f.y) || 1), -f.y / (Math.hypot(f.x, f.y) || 1)] : [dx / d, dy / d];
   };
   for (const z of w.zones as Zone[]) {
-    // lluvias de flechas enemigas: salir de debajo
-    if (z.kind === "rain" && z.team !== f.team && dist2(f.x, f.y, z.x, z.y) < (z.r + 8) ** 2) return away(z.x, z.y);
+    // zonas enemigas que hacen daño mientras estás dentro (o van a estallar): salir de debajo
+    if (AVOID.has(z.kind) && z.team !== f.team && dist2(f.x, f.y, z.x, z.y) < (z.r + 8) ** 2) return away(z.x, z.y);
     if (z.team !== -1) continue;
     switch (z.kind) {
       case "geyser":

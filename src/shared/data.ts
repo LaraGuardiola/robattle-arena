@@ -129,10 +129,12 @@ export interface SkillDef {
   charges?: number;
   /** movilidad hacia atrás (contraria a la mira): la IA apunta al enemigo para huir */
   back?: boolean;
+  /** se mantiene (visor): no tiene efecto propio, otras skills miran `f.hold` */
+  hold?: boolean;
 }
 
 export type ChampId = "beetlix" | "coltron" | "merlix" | "florak" | "nekobot" | "sawkuwa" | "tanker" | "vladbot" | "nexus" | "shinobot"
-  | "arquibot" | "gatlinga" | "boomera";
+  | "arquibot" | "gatlinga" | "boomera" | "sniperix" | "ignis" | "bombi";
 
 export interface ChampDef {
   id: ChampId;
@@ -398,6 +400,64 @@ export const CHAMPS: Record<ChampId, ChampDef> = {
       x: S({ id: "bigboomer", name: "Gran bumerán", desc: "Bumerán enorme y lento que arrastra a los enemigos que golpea a la ida (los suelta al girar): 10 de daño a la ida y 10 a la vuelta.", icon: "bigboomer", cd: 11, cast: 0.35, range: 180, aim: "line", size: 8, ai: "cc" }),
       y: S({ id: "perfectcatch", name: "Atrapada perfecta", desc: "Tus bumeranes en vuelo vuelven al instante y, durante 2 s, cada uno que atrapes te cura 8 y te quita 2 s de todas las recargas.", icon: "catch", cd: 8, cast: 0, range: 0, aim: "self", ai: "defend" }),
       b: S({ id: "blades", name: "Huracán de cuchillas", desc: "DEFINITIVA. Seis bumeranes giran 3 s a tu alrededor abriéndose en espiral (de 20 a 80 px): 9 de daño en cada pasada.", icon: "blades", cd: 1, cast: 0, range: 80, aim: "self", size: 80, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ francotiradora
+  sniperix: {
+    id: "sniperix",
+    name: "Sniperix",
+    role: "Francotiradora",
+    desc: "Alta, delgada y con un solo ojo rojo. Dispara desde muy lejos con su visor, tiende cables trampa y se cuelga de las columnas con un gancho.",
+    hp: 160,
+    speed: 60,
+    prefer: 210,
+    color: "#4a5068",
+    skills: {
+      r2: S({ id: "rifle", name: "Rifle", desc: "Bala muy rápida de 18 de daño. Con el visor puesto: alcance 420, 26 de daño y deja estela.", icon: "rifle", cd: 1.1, cast: 0.25, castMove: 0.5, range: 260, aim: "line", size: 3, ai: "poke" }),
+      l2: S({ id: "scope", name: "Visor", desc: "Mientras lo mantienes te quedas quieta, la cámara se adelanta hacia la mira y el rifle gana alcance y daño. Soltarlo no gasta nada.", icon: "scope", cd: 0, cast: 0, range: 420, aim: "line", size: 2, ai: "poke", hold: true }),
+      a: S({ id: "grapple", name: "Gancho de anclaje", desc: "Lanzas un cable: si engancha una columna, una caja o el borde, te arrastra hasta allí. Si toca a un enemigo, 6 de daño; si no toca nada, das un saltito hacia delante.", icon: "grapple", cd: 10, cast: 0, range: 160, aim: "line", size: 3, ai: "escape" }),
+      x: S({ id: "tripwire", name: "Cable trampa", desc: "Tiendes un láser entre tú y el punto marcado (12 s). El enemigo sólo lo ve parpadear cada 2 s; quien lo cruza recibe 12 de daño, queda revelado y va un 50% más lento 1,5 s.", icon: "tripwire", cd: 12, cast: 0.4, range: 110, aim: "ground", size: 6, ai: "zone" }),
+      y: S({ id: "flare", name: "Bengala", desc: "Lanzas una bengala a la zona: al estallar ciega 1,5 s a los enemigos dentro (apuntan desviados y con menos alcance) y revela a los invisibles 6 s.", icon: "flare", cd: 13, cast: 0.2, range: 200, aim: "ground", size: 50, ai: "cc" }),
+      b: S({ id: "railgun", name: "Cañón de riel", desc: "DEFINITIVA. Cargas 1,2 s con una línea de aviso que ven todos y disparas un rayo que atraviesa columnas, barricadas y enemigos: 55 de daño.", icon: "railgun", cd: 1, cast: 1.2, castMove: 0, range: 420, aim: "line", size: 8, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ lanzallamas
+  ignis: {
+    id: "ignis",
+    name: "Ignis",
+    role: "Lanzallamas",
+    desc: "Robot bombero reconvertido. Abrasa de cerca, deja charcos de napalm y encierra a sus presas en un anillo de fuego.",
+    hp: 205,
+    speed: 61,
+    prefer: 38,
+    color: "#c0392b",
+    heat: true,
+    skills: {
+      r2: S({ id: "flame", name: "Llamarada", desc: "Lanzallamas mientras mantienes: cono de 75 px, 3 de daño cada 0,1 s. Vas un 15% más lenta y cada llamarada sube 2,5 de calor; a 100 se apaga 1,5 s.", icon: "flame", cd: 0.1, cast: 0, range: 75, aim: "cone", size: 75, ai: "melee" }),
+      l2: S({ id: "napalm", name: "Napalm", desc: "Lanzas un bote que deja un charco ardiendo 4 s: 8 de daño por segundo y frena un 15%.", icon: "napalm", cd: 6, cast: 0.3, range: 160, aim: "ground", size: 30, ai: "zone" }),
+      a: S({ id: "afterburner", name: "Postcombustión", desc: "Acelerón de 110 px que deja un rastro de fuego 2 s (4 de daño por segundo).", icon: "afterburner", cd: 7, cast: 0, range: 110, aim: "dash", size: 8, ai: "gap" }),
+      x: S({ id: "heatbomb", name: "Bomba de calor", desc: "Colocas una bomba; vuelve a pulsar para detonarla (si no, estalla sola a los 5 s): 18 de daño +1 por cada 3 de calor en 40 px.", icon: "heatbomb", cd: 12, cast: 0.2, range: 120, aim: "ground", size: 40, ai: "zone" }),
+      y: S({ id: "firesuit", name: "Traje ignífugo", desc: "2 s recibiendo un 40% menos de daño; lo absorbido se convierte en calor y al acabar suelta una onda de 0,4 × lo absorbido.", icon: "firesuit", cd: 13, cast: 0, range: 0, aim: "self", size: 45, ai: "defend" }),
+      b: S({ id: "firering", name: "Anillo infernal", desc: "DEFINITIVA. Un anillo de fuego se cierra 2,5 s sobre el punto marcado: tocar el borde quema 20 (y 6 más cada vez que vuelvas a tocarlo) y deja en llamas 3 s.", icon: "firering", cd: 1, cast: 0.3, range: 160, aim: "ground", size: 90, ai: "ult", ult: true }),
+    },
+  },
+  // ------------------------------------------------------------ granadera
+  bombi: {
+    id: "bombi",
+    name: "Bombi",
+    role: "Granadera",
+    desc: "Robot redondo como una bomba, con la mecha en la cabeza. Granadas que ruedan, bombas que se pegan y barriles que cualquiera puede hacer estallar.",
+    hp: 175,
+    speed: 60,
+    prefer: 130,
+    color: "#2a2e44",
+    skills: {
+      r2: S({ id: "grenade", name: "Granada", desc: "Granada que rueda y rebota: explota a 1 s o al tocar a un enemigo, 14 de daño en 20 px.", icon: "grenade", cd: 0.7, cast: 0.2, castMove: 0.6, range: 170, aim: "line", size: 4, ai: "poke" }),
+      l2: S({ id: "limpet", name: "Bomba lapa", desc: "Bomba que se pega al enemigo y explota a los 2 s: 22 de daño alrededor. Si el portador toca a un aliado suyo, salta a él.", icon: "limpet", cd: 8, cast: 0.3, range: 150, aim: "line", size: 4, ai: "cc" }),
+      a: S({ id: "blastjump", name: "Salto explosivo", desc: "Una explosión bajo tus pies te lanza por los aires (intocable) y hace 8 de daño al despegar.", icon: "blastjump", cd: 9, cast: 0, range: 100, aim: "dash", size: 8, ai: "escape" }),
+      x: S({ id: "jumpmine", name: "Mina saltarina", desc: "Pones una mina que salta sobre el enemigo que pase a 35 px: 14 de daño. Hasta 3 a la vez y 2 cargas.", icon: "jumpmine", cd: 7, cast: 0.2, range: 110, aim: "ground", size: 35, ai: "zone", charges: 2 }),
+      y: S({ id: "barrel", name: "Barril explosivo", desc: "Colocas un barril (20 de vida) que estalla al romperse: 30 de daño en 40 px a TODOS. Cualquiera puede detonarlo disparándole.", icon: "barrel", cd: 12, cast: 0.25, range: 90, aim: "ground", size: 40, ai: "zone" }),
+      b: S({ id: "nuke", name: "Mini nuke", desc: "DEFINITIVA. Una bomba con cuenta atrás de 2,5 s (aviso enorme): 45 de daño en 60 px y deja el suelo radiactivo 3 s (5 por segundo).", icon: "nuke", cd: 1, cast: 0.4, range: 200, aim: "ground", size: 60, ai: "ult", ult: true }),
     },
   },
 };

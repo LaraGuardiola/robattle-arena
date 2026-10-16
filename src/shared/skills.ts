@@ -1,7 +1,7 @@
 // Comportamiento de cada skill. Los números de alcance, recarga y lanzamiento
 // están en data.ts; aquí, el daño y lo que hace cada una.
 
-import { clampArena, FIGHTER_R, type SkillDef } from "./data";
+import { ARENA_RX, ARENA_RY, clampArena, FIGHTER_R, type SkillDef } from "./data";
 import { angleDiff, dist2, segDist2 } from "./math";
 import type { Aim, Fighter, Proj, World } from "./world";
 
@@ -856,7 +856,281 @@ export const SKILLS: Record<string, SkillFn> = {
       },
     });
   },
+
+  // ================================================================ Sniperix
+  rifle(w, f, a, s) {
+    const scoped = f.hold === "l2";
+    w.fx("muzzle", f.x + a.dx * 11, f.y + a.dy * 11 - 6, angle(a), 1);
+    w.sfx("snipe");
+    const dmg = scoped ? 26 : 18;
+    w.proj(f, { kind: scoped ? "rifleScope" : "rifle", dx: a.dx, dy: a.dy, speed: 820, range: scoped ? 420 : s.range, r: 3, dmg, onHit: shot(dmg) });
+  },
+  scope() {
+    // sin efecto propio: el rifle mira `f.hold`
+  },
+  grapple(w, f, a, s) {
+    w.sfx("hook");
+    w.proj(f, {
+      kind: "grapple", dx: a.dx, dy: a.dy, speed: 520, range: s.range, r: 3, dmg: 6, onHit: shot(6),
+      onWall: (w, p) => {
+        // engancha: te arrastra hasta el punto
+        p.onEnd = undefined;
+        const dx = p.x - f.x, dy = p.y - f.y, d = Math.hypot(dx, dy);
+        if (d < 4 || !w.canAct(f) && !f.cast) return;
+        w.fx("snap", p.x, p.y, 0, 0);
+        w.sfx("dash");
+        w.dash(f, dx, dy, Math.max(0, d - FIGHTER_R - 4), Math.min(0.45, d / 380));
+      },
+      onEnd: (w, p) => {
+        if (f.dead || f.motion) return;
+        w.dash(f, p.x - f.x, p.y - f.y, 40, 0.15);
+      },
+    });
+  },
+  tripwire(w, f, a) {
+    for (const z of w.zones) if (z.kind === "tripwire" && z.owner === f) z.dead = true;
+    w.sfx("trap");
+    const dx = a.tx - f.x, dy = a.ty - f.y, len = Math.max(20, Math.hypot(dx, dy));
+    w.zone(f, {
+      kind: "tripwire", x: (f.x + a.tx) / 2, y: (f.y + a.ty) / 2, r: 4, a: Math.atan2(dy, dx), len, delay: 0.3, dur: 12, tickEvery: 0,
+      onTick: (w, z) => {
+        const c = Math.cos(z.a) * z.len / 2, sn = Math.sin(z.a) * z.len / 2;
+        for (const e of w.fighters) {
+          if (e.team === z.team || !w.targetable(e)) continue;
+          if (segDist2(e.x, e.y, z.x - c, z.y - sn, z.x + c, z.y + sn) > (FIGHTER_R + 1) ** 2) continue;
+          z.dead = true;
+          e.stealth = 0;
+          if (w.damage(f, e, 12, { from: [e.x, e.y] })) w.slowFor(e, 0.5, 1.5);
+          w.fx("snap", e.x, e.y, 0, 0);
+          w.sfx("trap");
+          w.popup(e.x, e.y - 34, "¡CABLE!", "#ff3b4e");
+          return;
+        }
+      },
+    });
+  },
+  flare(w, f, a, s) {
+    w.sfx("throw");
+    w.zone(f, {
+      kind: "flare", x: a.tx, y: a.ty, r: s.size, delay: 0.6, dur: 6, tickEvery: 0.1,
+      onArm: (w, z) => {
+        w.fx("ring", z.x, z.y, z.r, 1);
+        w.sfx("spawn");
+        for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) w.blindFor(e, 1.5);
+      },
+      onTick: (w, z) => {
+        for (const e of w.fighters) if (e.team !== z.team && e.stealth > 0 && dist2(e.x, e.y, z.x, z.y) < z.r * z.r) e.stealth = 0;
+      },
+    });
+  },
+  railgun(w, f, aim, s) {
+    // dispara hacia donde apuntaba la línea de aviso (gira despacio, no hacia la mira)
+    let a = aim;
+    for (const z of w.zones)
+      if (z.kind === "railaim" && z.owner === f) {
+        z.dead = true;
+        a = { ...aim, dx: Math.cos(z.a), dy: Math.sin(z.a) };
+        f.face = z.a;
+      }
+    // de la boca del cañón hasta el borde de la arena (atraviesa columnas y objetos)
+    let len = s.range;
+    while (len > 10 && Math.hypot((f.x + a.dx * len) / ARENA_RX, (f.y + a.dy * len) / ARENA_RY) > 1) len -= 5;
+    const x2 = f.x + a.dx * len, y2 = f.y + a.dy * len;
+    w.sfx("ray");
+    w.fx("shake", f.x, f.y, 6, 0);
+    w.zone(f, { kind: "rail", x: f.x, y: f.y - 6, r: 10, a: angle(a), len, delay: 0, dur: 0.4 });
+    for (const e of w.fighters)
+      if (e.team !== f.team && w.targetable(e) && segDist2(e.x, e.y, f.x, f.y, x2, y2) < (s.size + FIGHTER_R) ** 2) {
+        w.damage(f, e, 55, { from: [f.x, f.y] });
+        w.fx("boom", e.x, e.y - 4, 14, 0);
+      }
+    for (const p of w.props) if (segDist2(p.x, p.y, f.x, f.y, x2, y2) < (s.size + p.r) ** 2) w.hurtProp(p, 55);
+    if (w.orb && segDist2(w.orb.x, w.orb.y, f.x, f.y, x2, y2) < (s.size + 9) ** 2) w.hitOrb(f, 40);
+  },
+
+  // ================================================================ Ignis
+  flame(w, f, a, s) {
+    f.selfSlow = 0.15;
+    w.addHeat(f, 2.5);
+    w.fx("flame", f.x, f.y, angle(a), s.range);
+    if (f.ramp <= 0) w.sfx("firewall");
+    f.ramp = (f.ramp + 0.1) % 0.6;
+    for (const e of coneTargets(w, f, s.range, 0.95)) w.damage(f, e, 3, { from: [f.x, f.y], dot: true });
+    w.blastProps(f.x + a.dx * 35, f.y + a.dy * 35, 20, 3, f);
+    if (w.orb && dist2(w.orb.x, w.orb.y, f.x, f.y) < (s.range + 9) ** 2 && Math.abs(angleDiff(f.face, Math.atan2(w.orb.y - f.y, w.orb.x - f.x))) < 0.6) w.hitOrb(f, 3);
+  },
+  napalm(w, f, a, s) {
+    w.sfx("throw");
+    w.zone(f, {
+      kind: "napalm", x: a.tx, y: a.ty, r: s.size, delay: 0.45, dur: 4, tickEvery: 0.25,
+      onArm: (w, z) => {
+        w.fx("boom", z.x, z.y, 14, 0);
+        w.sfx("firewall");
+      },
+      onTick: (w, z) => {
+        for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) if (w.damage(f, e, 2, { from: [z.x, z.y], dot: true })) w.slowFor(e, 0.15, 0.3);
+      },
+    });
+  },
+  afterburner(w, f, a, s) {
+    w.sfx("dash");
+    w.fx("boom", f.x, f.y, 10, 0);
+    const x0 = f.x, y0 = f.y;
+    for (let k = 0; k <= 4; k++) {
+      const [x, y] = clampArena(x0 + a.dx * s.range * (k / 4), y0 + a.dy * s.range * (k / 4), 8);
+      w.zone(f, {
+        kind: "flametrail", x, y, r: 11, delay: 0.06 * k, dur: 2, tickEvery: 0.25,
+        onTick: (w, z) => {
+          for (const e of w.enemiesIn(z.team, z.x, z.y, z.r)) w.damage(f, e, 1, { dot: true });
+        },
+      });
+    }
+    w.dash(f, a.dx, a.dy, s.range, 0.26);
+  },
+  heatbomb(w, f, a, s) {
+    // segunda pulsación: detona la que haya
+    const mine = w.zones.find((z) => z.kind === "heatbomb" && z.owner === f && !z.dead);
+    if (mine) {
+      mine.dead = true;
+      heatBoom(w, f, mine.x, mine.y, s.size);
+      return;
+    }
+    w.sfx("throw");
+    w.zone(f, { kind: "heatbomb", x: a.tx, y: a.ty, r: s.size, delay: 0.3, dur: 5, onEnd: (w, z) => heatBoom(w, f, z.x, z.y, z.r) });
+    f.cds.x = 0.4;
+  },
+  firesuit(w, f, _a, s) {
+    f.guard = 2;
+    f.guardK = 0.4;
+    f.absorbed = 0;
+    w.sfx("armor");
+    w.zone(f, {
+      kind: "firesuit", x: f.x, y: f.y, r: s.size, delay: 0, dur: 2, follow: f,
+      onEnd: (w, z) => {
+        w.addHeat(f, f.absorbed);
+        const dmg = Math.round(f.absorbed * 0.4);
+        w.fx("ring", z.x, z.y, z.r, 1);
+        if (dmg > 0) {
+          w.fx("boom", z.x, z.y, z.r, 0);
+          w.sfx("boom");
+          blast(w, f, z.x, z.y, z.r, dmg, (e) => w.burn(e, f, 4, 2));
+        }
+      },
+    });
+  },
+  firering(w, f, a, s) {
+    w.sfx("firewall");
+    const last = new Map<number, number>();
+    w.zone(f, {
+      kind: "firering", x: a.tx, y: a.ty, r: s.size, delay: 0.3, dur: 2.5, tickEvery: 0,
+      onTick: (w, z) => {
+        z.r = s.size - 60 * (z.t / z.dur);
+        for (const e of w.fighters) {
+          if (e.team === f.team || !w.targetable(e)) continue;
+          const d = Math.hypot(e.x - z.x, (e.y - z.y) / 0.8);
+          if (Math.abs(d - z.r) > 4 + FIGHTER_R) continue;
+          const prev = last.get(e.id);
+          if (prev !== undefined && z.t - prev < 0.5) continue;
+          last.set(e.id, z.t);
+          if (w.damage(f, e, prev === undefined ? 20 : 6, { from: [z.x, z.y] })) w.burn(e, f, 4, 3);
+        }
+      },
+    });
+  },
+
+  // ================================================================ Bombi
+  grenade(w, f, a, s) {
+    w.sfx("throw");
+    const boom = (w: World, p: Proj) => explode(w, f, p.x, p.y, 20, 14);
+    w.proj(f, {
+      kind: "grenade", dx: a.dx, dy: a.dy, speed: 300 + s.range * 0.75, range: 9999, r: 3, dmg: 14, fuse: 1, fric: 2.2, bounces: 6,
+      onHit: (w, _t, p) => boom(w, p), onEnd: boom,
+    });
+  },
+  limpet(w, f, a, s) {
+    w.sfx("throw");
+    w.proj(f, {
+      kind: "limpet", dx: a.dx, dy: a.dy, speed: 380, range: s.range, r: 4, dmg: 6,
+      onHit: (w, t) => {
+        if (!w.ccable(t)) return;
+        t.sticky = { t: 2, src: f, boom: (w, at) => explode(w, f, at.x, at.y, 26, 22) };
+        w.popup(t.x, t.y - 34, "¡PEGADA!", "#ff8a2b");
+        w.sfx("trap");
+      },
+    });
+  },
+  blastjump(w, f, a, s) {
+    explode(w, f, f.x, f.y, 20, 8);
+    w.dash(f, a.dx, a.dy, s.range, 0.42, { air: true, h: 32 });
+  },
+  jumpmine(w, f, a, s) {
+    const mine = w.zones.filter((z) => z.kind === "jmine" && z.owner === f);
+    if (mine.length >= 3) mine[0]!.dead = true;
+    w.sfx("throw");
+    w.zone(f, {
+      kind: "jmine", x: a.tx, y: a.ty, r: s.size, delay: 0.6, dur: 15, tickEvery: 0.05,
+      onTick: (w, z) => {
+        const e = w.enemiesIn(z.team, z.x, z.y, z.r)[0];
+        if (!e) return;
+        z.dead = true;
+        w.fx("afterimage", z.x, z.y, 0, 0);
+        explode(w, f, e.x, e.y, 16, 14);
+      },
+    });
+  },
+  barrel(w, f, a) {
+    const mine = w.props.filter((p) => p.kind === "barrel" && p.owner === f);
+    if (mine.length >= 2) w.breakProp(mine[0]!);
+    w.sfx("armor");
+    w.addProp(f, {
+      kind: "barrel", x: a.tx, y: a.ty, r: 6, hp: 20,
+      onBreak: (w, p) => {
+        w.fx("boom", p.x, p.y, 40, 1);
+        w.fx("shake", p.x, p.y, 6, 0);
+        w.sfx("boom");
+        // daña a todos: el que lo puso no se libra
+        for (const e of w.fighters)
+          if (!e.dead && dist2(e.x, e.y, p.x, p.y) < (40 + FIGHTER_R) ** 2) w.damage(e.team !== f.team ? f : null, e, 30, { from: [p.x, p.y] });
+        w.blastProps(p.x, p.y, 40, 30, f);
+      },
+    });
+  },
+  nuke(w, f, a, s) {
+    w.sfx("throw");
+    w.zone(f, {
+      kind: "nuke", x: a.tx, y: a.ty, r: s.size, delay: 2.5, dur: 0.1,
+      onArm: (w, z) => {
+        w.fx("boom", z.x, z.y, z.r, 1);
+        w.fx("orbbreak", z.x, z.y, 0, 0);
+        w.fx("shake", z.x, z.y, 10, 0);
+        w.sfx("boom");
+        w.sfx("slam");
+        blast(w, f, z.x, z.y, z.r, 45);
+        w.zone(f, {
+          kind: "radiation", x: z.x, y: z.y, r: z.r, delay: 0, dur: 3, tickEvery: 0.4,
+          onTick: (w, q) => {
+            for (const e of w.enemiesIn(q.team, q.x, q.y, q.r)) w.damage(f, e, 2, { dot: true });
+          },
+        });
+      },
+    });
+  },
 };
+
+/** Explosión de Ignis: más fuerte cuanto más calor lleve encima. */
+function heatBoom(w: World, f: Fighter, x: number, y: number, r: number) {
+  w.fx("boom", x, y, r, 0);
+  w.fx("shake", x, y, 4, 0);
+  w.sfx("boom");
+  blast(w, f, x, y, r, 18 + Math.floor(f.heat / 3), (e) => w.burn(e, f, 4, 2));
+}
+
+/** Explosión de Bombi. */
+function explode(w: World, f: Fighter, x: number, y: number, r: number, dmg: number) {
+  w.fx("boom", x, y, r, 0);
+  w.sfx("boom");
+  blast(w, f, x, y, r, dmg);
+}
 
 /** Boomera atrapa un bumerán: recarga el básico y, con Atrapada perfecta, cura y acelera las recargas. */
 function catchBoomer(w: World, f: Fighter, resetR2: boolean) {
@@ -874,6 +1148,16 @@ const DT_PULL = 1 / 60;
 
 /** Skills canalizadas: efecto en cada paso del lanzamiento. */
 export const CHANNELS: Record<string, ChannelFn> = {
+  /** Cañón de riel: línea de aviso que ven todos y que sigue la mira. */
+  railgun(w, f, a) {
+    let z = w.zones.find((q) => q.kind === "railaim" && q.owner === f && !q.dead);
+    if (!z) z = w.zone(f, { kind: "railaim", x: f.x, y: f.y, r: 4, a: angle(a), len: f.def.skills.b.range, delay: 0, dur: f.def.skills.b.cast + 0.1 });
+    z.x = f.x;
+    z.y = f.y;
+    // gira hacia la mira despacio: se puede esquivar
+    z.a += Math.max(-0.05, Math.min(0.05, angleDiff(z.a, angle(a))));
+    return true;
+  },
   drain(w, f, a, dt) {
     const s = f.def.skills.l2;
     const ch = f.chan;

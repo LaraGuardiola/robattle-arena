@@ -31,7 +31,7 @@ const LEVER_USE = [0.05, 0.25, 0.5];
 /** velocidad media de proyectil para anticipar */
 const LEAD_SPEED: Record<string, number> = {
   revolver: 430, snipe: 950, fireball: 270, seed: 340, hook: 420, disable: 400, pollen: 230, shells: 330,
-  arrow: 560, rotary: 440, boomerang: 340,
+  arrow: 560, rotary: 440, boomerang: 340, rifle: 820, grenade: 300,
 };
 
 export function botThink(w: World, f: Fighter, dt: number) {
@@ -229,6 +229,14 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
   }
   const order: Slot[] = ["b", "a", "x", "y", "l2", "r2"];
   for (const slot of order) {
+    // visor: mantenerlo y disparar el rifle cuando el enemigo está lejos
+    if (f.def.skills[slot].hold) {
+      if (dist > 200 && dist < 400 && clear && f.cds.r2 < 0.4 && f.overheat <= 0) {
+        b.wantB = SLOT_BIT[slot] | SLOT_BIT.r2;
+        return;
+      }
+      continue;
+    }
     // con calor, la cadencia acelera manteniendo: el básico se mantiene aunque esté entre dos disparos
     if (!w.canUse(f, slot) && !(slot === "r2" && f.def.heat && f.cds.r2 < 0.3 && f.overheat <= 0)) continue;
     const s = f.def.skills[slot];
@@ -281,6 +289,12 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
         if (s.aim !== "self") aim = predict(dist / 300);
         break;
       case "zone":
+        if (s.id === "heatbomb" && w.zones.some((z) => z.kind === "heatbomb" && z.owner === f)) {
+          // ya hay una puesta: detonarla cuando alguien esté encima
+          const z = w.zones.find((q) => q.kind === "heatbomb" && q.owner === f)!;
+          ok = z.armed && enemies.some((e) => dist2(e.x, e.y, z.x, z.y) < (z.r + 4) ** 2);
+          break;
+        }
         ok = dist <= s.range;
         aim = s.id === "trap" ? predict(0.6) : predict(0.65);
         break;
@@ -292,7 +306,7 @@ function decide(w: World, f: Fighter, t: Fighter, dist: number, allies: Fighter[
           ok = dist <= s.range && (t.hp / t.maxHp < 0.7 || R.next() < 0.3);
           aim = predict(0.7);
         } else {
-          ok = dist <= s.range * 0.9 && (t.hp / t.maxHp < 0.7 || R.next() < 0.3) && (s.id === "ray" || clear);
+          ok = dist <= s.range * 0.9 && (t.hp / t.maxHp < 0.7 || R.next() < 0.3) && (s.id === "ray" || s.id === "railgun" || clear);
           aim = predict(s.cast + dist / 500);
         }
         break;

@@ -2,7 +2,7 @@
 // peta y da una idea del equilibrio (victorias y duración de las rondas).
 //   bun tools/sim-test.ts [partidas por cruce]
 
-import { ARENAS, CHAMP_IDS, LAYOUTS, type ChampId } from "../src/shared/data";
+import { ARENAS, CHAMPS, CHAMP_IDS, LAYOUTS, type ChampId } from "../src/shared/data";
 import { SKILLS } from "../src/shared/skills";
 import { TRAPS } from "../src/shared/traps";
 import { DT, World } from "../src/shared/world";
@@ -83,7 +83,9 @@ for (let k = 0; k < N * 12; k++) {
 }
 console.log("2v2 aleatorio:");
 for (const c of CHAMP_IDS) console.log(`  ${c.padEnd(9)} ${(((w2[c] ?? 0) / (g2[c] ?? 1)) * 100).toFixed(0).padStart(3)}% victorias`);
-const never = Object.keys(SKILLS).filter((k) => !used[k]);
+// las skills mantenidas (visor) no se "lanzan": no cuentan
+const held = new Set(Object.values(CHAMPS).flatMap((c) => Object.values(c.skills).filter((sk) => sk.hold).map((sk) => sk.id)));
+const never = Object.keys(SKILLS).filter((k) => !used[k] && !held.has(k));
 console.log("skills usadas:", Object.entries(used).map(([k, v]) => `${k}:${v}`).join(" "));
 if (never.length) console.log("¡NUNCA USADAS!:", never.join(", "));
 console.log(`lado azul ${side[0]} · lado rojo ${side[1]} (${((side[0]! / (side[0]! + side[1]!)) * 100).toFixed(0)}% azul)`);

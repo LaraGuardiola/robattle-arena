@@ -5,7 +5,7 @@ import { ARENAS, ARENA_RX, ARENA_RY, CHAMPS, SLOTS, TEAM_COLORS, type SkillDef }
 import { TAU } from "../shared/math";
 import { LV_STRIDE, PP_STRIDE, PROJ_KINDS, PROP_KINDS, PR_STRIDE, ST, ZONE_KINDS, ZN_STRIDE, type Ev, type FSnap, type Snap } from "../shared/protocol";
 import { CAPSULE_ART } from "./art";
-import { artSprite, projSprite, robotSprite, robotTint } from "./sprites";
+import { artSprite, iconSprite, projSprite, robotSprite, robotTint } from "./sprites";
 import { bakeArena, bakePillar } from "./tiles";
 
 interface Particle { x: number; y: number; z: number; vx: number; vy: number; vz: number; life: number; max: number; c: string; s: number; g?: number }
@@ -96,6 +96,12 @@ export class Renderer {
     switch (kind) {
       case "slash": case "claw": push(0.16); break;
       case "quake": push(0.35); this.burst(x + Math.cos(a) * b * 0.6, y + Math.sin(a) * b * 0.6, 14, "#8c6c48", 80, 2); this.kick(3); break;
+      case "flame":
+        for (let k = 0; k < 5 && this.parts.length < 700; k++) {
+          const an = a + (Math.random() - 0.5) * 0.9, v = b * (2.2 + Math.random() * 1.5);
+          this.parts.push({ x: x + Math.cos(a) * 8, y, z: 6, vx: Math.cos(an) * v, vy: Math.sin(an) * v * 0.8, vz: 6, life: 0.28, max: 0.28, c: k % 3 === 0 ? "#ffd23f" : k % 3 === 1 ? "#ff8a2b" : "#ff3b4e", s: 2, g: 0 });
+        }
+        break;
       case "steam": push(0.3); this.burst(x + Math.cos(a) * 25, y + Math.sin(a) * 25, 14, "#e6eef8", 90, 2); break;
       case "fist": push(0.25); this.burst(x + Math.cos(a) * 20, y + Math.sin(a) * 20, 12, "#ff8a2b", 110); break;
       case "ring": push(0.35); break;
@@ -174,6 +180,14 @@ export class Renderer {
     if (wsum) {
       fx /= wsum;
       fy /= wsum;
+    }
+    // visor: la cámara se adelanta hacia la mira (poco en sofá, para no sacar a nadie del encuadre)
+    for (const l of locals) {
+      const f = s.f.find((q) => q.id === l.id);
+      if (!f || !(f.st & ST.scope)) continue;
+      const lim = locals.length > 1 ? 40 : 130, d = Math.hypot(l.ax, l.ay) || 1, k = Math.min(lim, d * 0.6) / d;
+      fx += l.ax * k;
+      fy += l.ay * k;
     }
     const aw = A.canvas.width, ah = A.canvas.height;
     let tx = fx - this.W / 2, ty = fy - 10 - this.H / 2;
@@ -338,8 +352,9 @@ export class Renderer {
     const casting = cs && (cs.cast >= 0.25 || cs.charge) ? cs : null;
     const d = Math.hypot(l.ax, l.ay) || 1;
     const dx = l.ax / d, dy = l.ay / d;
-    const s: SkillDef = casting ?? def.skills.r2;
-    const col = casting ? "#ffd23f" : TEAM_COLORS[f.team]!;
+    const scoped = !!(f.st & ST.scope);
+    const s: SkillDef = casting ?? (scoped ? { ...def.skills.r2, range: 420 } : def.skills.r2);
+    const col = casting ? "#ffd23f" : scoped ? "#ff3b4e" : TEAM_COLORS[f.team]!;
     const ox = f.x, oy = f.y - 4;
     ctx.globalAlpha = casting ? 0.55 + Math.sin(now * 20) * 0.15 : 0.35;
     ctx.fillStyle = col;
@@ -507,6 +522,27 @@ export class Renderer {
       ctx.fillRect(px, top - 10 - k, 1, 2);
       ctx.fillRect(px, top - 3 + k, 1, 2);
     }
+    if (f.st & ST.blind) {
+      // venda oscura sobre los ojos
+      ctx.fillStyle = "#17121f";
+      ctx.fillRect(px - 6, top + 4, 12, 3);
+      this.label(px + 7, top - 2, "?", "#fff6c8");
+    }
+    if (f.st & ST.burn && Math.random() < 0.5)
+      this.parts.push({ x: f.x + (Math.random() - 0.5) * 9, y: f.y, z: 4 + Math.random() * 10, vx: 0, vy: 0, vz: 25, life: 0.35, max: 0.35, c: Math.random() < 0.5 ? "#ff8a2b" : "#ffd23f", s: 1, g: 0 });
+    if (f.st & ST.guard) {
+      ctx.strokeStyle = `rgba(255,138,43,${0.6 + Math.sin(now * 12) * 0.3})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(px, py - 8, 12, 13, 0, 0, TAU);
+      ctx.stroke();
+    }
+    if (f.st & ST.sticky) {
+      ctx.fillStyle = "#17121f";
+      ctx.fillRect(px - 2, py - 10, 5, 4);
+      ctx.fillStyle = Math.floor(now * 10) % 2 ? "#ff3b4e" : "#ffd23f";
+      ctx.fillRect(px - 1, py - 9, 3, 2);
+    }
     if (f.st & ST.empower && Math.random() < 0.25) this.sparkle(f.x, f.y, "#b8ff5f", 1);
     if (f.st & ST.slow && Math.random() < 0.15) this.parts.push({ x: f.x + (Math.random() - 0.5) * 10, y: f.y, z: 10, vx: 0, vy: 0, vz: -10, life: 0.4, max: 0.4, c: "#7fe3ff", s: 1, g: 0 });
     if (f.st & ST.hot && Math.random() < 0.2) this.sparkle(f.x, f.y, "#5fe08a", 1);
@@ -588,6 +624,13 @@ export class Renderer {
           ctx.fillRect(bx, by - h + 5, 1, 2);
         }
       }
+      return;
+    }
+    if (kind === "barrel") {
+      const spr = iconSprite("barrel");
+      this.shadow(px, py + 1, 6);
+      ctx.drawImage(spr, px - (spr.width >> 1), py - spr.height + 2);
+      if (hp < 0.6 && Math.random() < 0.3) this.parts.push({ x, y, z: 12, vx: 0, vy: 0, vz: 15, life: 0.4, max: 0.4, c: "#ff8a2b", s: 1, g: 0 });
       return;
     }
     if (kind === "crate") {
@@ -758,7 +801,8 @@ export class Renderer {
       return;
     }
     const rot = kind === "snipe" || kind === "hook" || kind === "shellx" || kind === "fireball" || kind === "kunai" || kind === "wave"
-      || kind === "arrow" || kind === "arrowFull" || kind === "arrowBig" || kind === "pin" || kind === "tracer" || kind === "gbullet";
+      || kind === "arrow" || kind === "arrowFull" || kind === "arrowBig" || kind === "pin" || kind === "tracer" || kind === "gbullet"
+      || kind === "rifle" || kind === "rifleScope" || kind === "grapple";
     if (rot) {
       ctx.save();
       ctx.translate(X(x), Y(y) - lift);
@@ -798,6 +842,14 @@ export class Renderer {
       trail("#b8ff5f", 0.9);
       if (kind === "arrowBig") trail("#ffffff", 0.7);
     } else if (kind === "tracer") trail("#ff3b4e", 0.9);
+    else if (kind === "rifleScope") {
+      ctx.strokeStyle = "rgba(255,59,78,0.55)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(X(x), Y(y) - lift);
+      ctx.lineTo(X(x - Math.cos(a) * 60), Y(y - Math.sin(a) * 60) - lift);
+      ctx.stroke();
+    } else if (kind === "grenade" && Math.random() < 0.5) this.parts.push({ x, y, z: 4, vx: 0, vy: 0, vz: 10, life: 0.2, max: 0.2, c: "#ffd23f", s: 1, g: 0 });
   }
 
   // ------------------------------------------------------------ zonas
@@ -1164,6 +1216,159 @@ export class Renderer {
             ctx.stroke();
           }
           ctx.globalAlpha = 1;
+          break;
+        }
+        case "railaim": {
+          // línea de aviso que ven todos
+          const blink = Math.floor(now * 14) % 2;
+          ctx.globalAlpha = 0.35 + prog * 0.5;
+          ctx.fillStyle = blink ? "#ff3b4e" : "#3fd7ff";
+          for (let k = 8; k < len; k += 3) ctx.fillRect(X(x + Math.cos(a) * k), Y(y + Math.sin(a) * k) - 6, 2, 1);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "rail": {
+          const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
+          for (const [col, lw, al] of [["#3fd7ff", r + 4, 0.35], ["#bff6ff", r * 0.6, 0.9], ["#ffffff", 2, 1]] as const) {
+            ctx.globalAlpha = al * (1 - prog);
+            ctx.strokeStyle = col;
+            ctx.lineWidth = lw;
+            ctx.lineCap = "round";
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(X(x2), Y(y2));
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "tripwire": {
+          // el enemigo sólo lo ve parpadear cada 2 s
+          const t = prog * 12;
+          if (!ally && t % 2 > 0.15) break;
+          const c = Math.cos(a) * len / 2, sn = Math.sin(a) * len / 2;
+          ctx.globalAlpha = armed ? (ally ? 0.7 : 1) : 0.3;
+          ctx.strokeStyle = "#ff3b4e";
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(X(x - c), Y(y - sn) - 2);
+          ctx.lineTo(X(x + c), Y(y + sn) - 2);
+          ctx.stroke();
+          ctx.fillStyle = "#7d8499";
+          ctx.fillRect(X(x - c) - 1, Y(y - sn) - 4, 3, 4);
+          ctx.fillRect(X(x + c) - 1, Y(y + sn) - 4, 3, 4);
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "flare": {
+          if (!armed) {
+            const h = Math.round((1 - prog) * 70);
+            ctx.fillStyle = "#ffd23f";
+            ctx.fillRect(px - 1, py - h - 2, 3, 3);
+            this.disc(px, py, r * prog, "#fff6c8", 0.12);
+            break;
+          }
+          const fade = 1 - prog;
+          this.disc(px, py, r, "#fff6c8", 0.12 * fade);
+          this.disc(px, py - 4, 3 + Math.sin(now * 30), "#ffffff", fade);
+          if (Math.random() < 0.4 * fade) this.sparkle(x, y, "#ffd23f", 1);
+          break;
+        }
+        case "napalm":
+        case "radiation":
+        case "flametrail": {
+          const nuke = kind === "radiation";
+          if (!armed) {
+            if (kind === "napalm") {
+              const h = Math.round(Math.sin(prog * Math.PI) * 30);
+              this.shadow(px, py, 3);
+              ctx.drawImage(projSprite("napalmJar"), px - 2, py - h - 6);
+            }
+            break;
+          }
+          const fade = Math.min(1, (1 - prog) * 5);
+          this.disc(px, py, r, nuke ? "#5fe08a" : "#ff3b4e", 0.25 * fade);
+          this.disc(px, py, r * 0.7, nuke ? "#c6f7ae" : "#ff8a2b", 0.22 * fade);
+          if (Math.random() < (kind === "flametrail" ? 0.3 : 0.7) * fade) {
+            const an = Math.random() * TAU, rr = Math.random() * r;
+            this.parts.push({ x: x + Math.cos(an) * rr, y: y + Math.sin(an) * rr * 0.8, z: 0, vx: 0, vy: 0, vz: 22, life: 0.4, max: 0.4, c: nuke ? (Math.random() < 0.5 ? "#5fe08a" : "#ffd23f") : Math.random() < 0.5 ? "#ff8a2b" : "#ffd23f", s: 1, g: 0 });
+          }
+          break;
+        }
+        case "heatbomb": {
+          const blink = Math.floor(now * (prog > 0.7 ? 14 : 5)) % 2;
+          if (ally || armed) {
+            ctx.globalAlpha = 0.3;
+            ctx.strokeStyle = "#ff8a2b";
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+          }
+          const spr = iconSprite("heatbomb");
+          ctx.drawImage(spr, px - (spr.width >> 1), py - spr.height + 2);
+          if (blink) {
+            ctx.fillStyle = "#ffd23f";
+            ctx.fillRect(px - 1, py - 6, 2, 2);
+          }
+          break;
+        }
+        case "firesuit": {
+          if (Math.random() < 0.5) {
+            const an = Math.random() * TAU;
+            this.parts.push({ x: x + Math.cos(an) * 10, y: y + Math.sin(an) * 6, z: 4, vx: 0, vy: 0, vz: 20, life: 0.3, max: 0.3, c: "#ff8a2b", s: 1, g: 0 });
+          }
+          break;
+        }
+        case "firering": {
+          if (!armed) {
+            ctx.strokeStyle = Math.floor(now * 12) % 2 ? "#ffd23f" : "#ff3b4e";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+            break;
+          }
+          this.disc(px, py, r, "#ff3b4e", 0.08);
+          const n = Math.max(12, Math.round(r * 0.45));
+          for (let k = 0; k < n; k++) {
+            const an = (k / n) * TAU + now * 0.6;
+            const fx = X(x + Math.cos(an) * r), fy = Y(y + Math.sin(an) * r * 0.8);
+            const h = 5 + Math.round(Math.sin(now * 16 + k) * 2);
+            ctx.fillStyle = "#ff3b4e";
+            ctx.fillRect(fx - 1, fy - h, 3, h);
+            ctx.fillStyle = "#ffd23f";
+            ctx.fillRect(fx, fy - h + 2, 1, h - 2);
+          }
+          break;
+        }
+        case "jmine": {
+          ctx.globalAlpha = ally ? 1 : 0.5;
+          const spr = projSprite("mine");
+          ctx.drawImage(spr, px - (spr.width >> 1), py - spr.height + 2 - (armed ? 0 : Math.round((1 - prog) * 8)));
+          if (ally && armed) {
+            ctx.globalAlpha = 0.15;
+            ctx.strokeStyle = TEAM_COLORS[team]!;
+            ctx.beginPath();
+            ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+            ctx.stroke();
+          }
+          ctx.globalAlpha = 1;
+          break;
+        }
+        case "nuke": {
+          if (armed) break;
+          // aviso enorme con cuenta atrás y la bomba cayendo
+          this.disc(px, py, r, "#ffd23f", 0.1 + prog * 0.15);
+          this.disc(px, py, r * prog, "#ff3b4e", 0.25);
+          ctx.strokeStyle = Math.floor(now * (prog > 0.7 ? 16 : 6)) % 2 ? "#ffd23f" : "#17121f";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(px, py, r, r * 0.8, 0, 0, TAU);
+          ctx.stroke();
+          const spr = iconSprite("nuke");
+          ctx.drawImage(spr, px - (spr.width >> 1), py - 8 - Math.round((1 - prog) * 140));
+          this.number(px, py - 26, Math.ceil(2.5 * (1 - prog)), "#ffd23f", 2);
           break;
         }
         case "rain": {

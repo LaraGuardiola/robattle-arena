@@ -26,6 +26,18 @@ Rotativa 5 de daño y 4 de calor, el Bumerán recarga 1,4 s (atraparlo la
 reinicia), Atrapada perfecta también hace volver los bumeranes en vuelo y la
 trazadora reduce el calor a la mitad mientras dura la marca.
 
+**Hecho (tanda 2):** Sniperix, Ignis y Bombi con su arte. Motor: skills
+mantenidas (`SkillDef.hold`, `f.hold`; la cámara del cliente se adelanta con
+el visor), ceguera (`blindFor`: desvío y −30% de alcance en `aimOf`),
+quemaduras (`w.burn`), reducción de daño absorbido (`guard`/`absorbed`),
+autoralentización (`selfSlow`), bomba pegada que salta (`f.sticky`) y
+proyectiles con mecha y fricción (`fuse`, `fric`, `onWall`). La IA sale de
+charcos, radiación, nukes y bombas enemigas (`AVOID` en traps.ts).
+Desviaciones: Ignis 205 de vida, −15% de velocidad al lanzar llamas, 75 px de
+cono y Postcombustión de 110 px; granada 14 de daño en 20 px cada 0,7 s;
+Traje ignífugo devuelve 0,4 × lo absorbido; el Gancho sin enganche da un
+saltito; el riel gira despacio hacia la mira durante la carga.
+
 - 10 campeones en `src/shared/data.ts` (`CHAMPS`), comportamiento en
   `src/shared/skills.ts` (`SKILLS` + `CHANNELS` para canalizaciones).
 - Slots fijos: `r2` básico (mantener), `l2` secundaria, `a` movilidad, `x`/`y`

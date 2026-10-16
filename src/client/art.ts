@@ -327,6 +327,78 @@ export const ROBOT_ART: Record<string, Rig> = {
       [".....AAAA.......", ".....GG.GG......", "....yGG.yGG....."],
     ],
   },
+  // ---- tanda 2
+  sniperix: {
+    // alta y delgada, casco con un solo ojo rojo, capa de camuflaje y rifle más largo que ella
+    pal: { ...METAL, h: "#7a82a0", a: "#4a5068", A: "#2e3246", c: "#5a6b3a", C: "#3a4a22", r: "#ff3b4e", R: "#ffd3d8", b: "#5a3a1b" },
+    body: [
+      "....hhhh........",
+      "...haaaaA.......",
+      "...haaarRA......",
+      "...haaaaA.......",
+      "....AAAA........",
+      "...cCaaCc.......",
+      "..cCaaaaCc......",
+      "..cahhbbGGGGGGGg",
+      "..cCaaaaCc.G....",
+      "..cCaaaaCc......",
+      "..cCaaaaCc......",
+      "...CaaaaC.......",
+      "...CAAAAC.......",
+    ],
+    legs: [
+      ["....AA..AA......", "....GG..GG......", "....GG..GG......", "...AGG.AGG......"],
+      ["...AA....AA.....", "...GG...GG......", "...GG...GG......", "..AGG...AGG....."],
+      [".....AAAA.......", ".....GG.GG......", ".....GG.GG......", "....AGG.AGG....."],
+    ],
+  },
+  ignis: {
+    // bombero: casco con visera, depósito de combustible a la espalda y boquilla enorme
+    pal: { ...METAL, r: "#c0392b", R: "#7a1a14", h: "#ff7060", o: "#ff8a2b", y: "#ffd23f", v: "#3fd7ff", V: "#bff6ff" },
+    body: [
+      "....RRRRR.......",
+      "...RhrrrrR......",
+      "..RhrrrrrrR.....",
+      "..RRRRRRRRRR....",
+      "...gvvvVg.......",
+      "...gvvvvg.......",
+      ".o..ggggg.......",
+      "oGGrrrrrrR......",
+      "oGgrhrrrrRggggoy",
+      "oGgrryyrrRgGGGyo",
+      "oGGrrrrrrR......",
+      "...rrrrrR.......",
+      "...RRRRRR.......",
+    ],
+    legs: [
+      ["....RR..RR......", "....GG..GG......", "...kGG.kGG......"],
+      ["...RR....RR.....", "...GG...GG......", "..kGG...kGG....."],
+      [".....RRRR.......", ".....GG.GG......", "....kGG.kGG....."],
+    ],
+  },
+  bombi: {
+    // redonda como una bomba, mecha encendida en la cabeza y cinturón de granadas
+    pal: { ...METAL, b: "#2a2e44", B: "#1a1d2e", h: "#5a6080", o: "#ff8a2b", y: "#ffd23f", e: "#ffffff", r: "#ff3b4e" },
+    body: [
+      "........y.y.....",
+      ".........o......",
+      "........o.......",
+      ".......ggg......",
+      ".....hhbbbbb....",
+      "....hbbbbbbbB...",
+      "...hbbbbebebbB..",
+      "...hbbbbbbbbbB..",
+      "...brrbrrbrrbB..",
+      "...bbbbbbbbbbB..",
+      "....bbbbbbbbB...",
+      ".....BBBBBBB....",
+    ],
+    legs: [
+      [".....gG..gG.....", "....BBB.BBB....."],
+      ["....gG....gG....", "...BBB....BBB..."],
+      ["......gGgG......", ".....BBBBBB....."],
+    ],
+  },
 };
 
 // =============================================================== proyectiles y objetos
@@ -376,6 +448,13 @@ export const PROJ_ART: Record<string, Art> = {
   tracer: { pal: { r: "#ff3b4e", w: "#ffffff" }, rows: ["rrrww"], outline: "#5a0010" },
   chakram: { pal: { g: "#dfe4ee", G: "#7d8499", c: "#2ec4b6" }, rows: [".ggg.", "gGcGg", "gc.cg", "gGcGg", ".ggg."] },
   bigboomer: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["gggggg.", "gGGGGg.", "gGyyyg.", "gGy....", "gGy....", "gGy....", "ggg...."] },
+  // ---- tanda 2
+  rifle: { pal: { y: "#ffd23f", w: "#ffffff" }, rows: ["yyywww"], outline: "#4a3000" },
+  rifleScope: { pal: { r: "#ff3b4e", w: "#ffffff" }, rows: ["rrrwwww", "rrrwwww"], outline: "#5a0010" },
+  grapple: { pal: { g: "#dfe4ee", G: "#7d8499" }, rows: ["...g.", "GGgGg", "...g."] },
+  grenade: { pal: { a: "#4a5528", h: "#8a9a4a", y: "#ffd23f", g: "#9aa0b0" }, rows: [".gy.", "ahaa", "aaaa", ".aa."] },
+  limpet: { pal: { r: "#ff3b4e", k: "#2a2e44", y: "#ffd23f" }, rows: [".y.", "krk", "kkk"] },
+  napalmJar: { pal: { o: "#ff8a2b", g: "#dfe4ee" }, rows: [".g.", "ooo", "ooo"] },
   batUp: { pal: { k: "#3a1a4a", r: "#ff3b4e" }, rows: [".k.k.", "kkrkk", "k...k"] },
 };
 
@@ -476,6 +555,25 @@ export const ICONS: Record<string, Art> = {
   bigboomer: { pal: { g: "#dfe4ee", G: "#7d8499", y: "#ffd23f" }, rows: ["gggggggg..", "gGGGGGGg..", "gGyyyyyg..", "gGy.......", "gGy.......", "gGy.......", "gGy.......", "gGy.......", "ggg.......", ".........."] },
   catch: { pal: { y: "#ffd23f", Y: "#c08a10", a: "#2ec4b6", A: "#1a7a72", g: "#5fe08a" }, rows: ["..yyyy....", "..yYY.....", "..yY..g...", "......g...", "....ggggg.", "aa....g...", "aAa...g...", "aAAa......", ".aAAa.....", "..aa......"] },
   blades: { pal: { y: "#ffd23f", g: "#dfe4ee", a: "#2ec4b6" }, rows: ["y...g...y.", ".y.....y..", "..........", "g...aa...g", "...aaaa...", "g...aa...g", "..........", ".y.....y..", "y...g...y.", ".........."] },
+  // ---- tanda 2
+  rifle: { pal: { g: "#7d8499", G: "#4a5068", b: "#5a3a1b", r: "#ff3b4e", w: "#ffffff" }, rows: ["..........", "...rr.....", "..GGGG....", "gggggggggw", "GGbbGG....", "..bb......", ".bb.......", "bb........", "..........", ".........."] },
+  scope: { pal: { k: "#17121f", g: "#9aa0b0", r: "#ff3b4e" }, rows: ["...gggg...", "..g.r..g..", ".g..r...g.", "g...r....g", "grrrrrrrrg", "g...r....g", ".g..r...g.", "..g.r..g..", "...gggg...", ".........."] },
+  grapple: { pal: { g: "#dfe4ee", G: "#7d8499", a: "#4a5068" }, rows: ["......ggg.", ".....g..g.", "......Ggg.", ".....G....", "....G.....", "...G......", "..G.......", "aaa.......", "aaa.......", ".........."] },
+  tripwire: { pal: { r: "#ff3b4e", R: "#ffd3d8", g: "#7d8499" }, rows: ["..........", "..........", "g........g", "gg......gg", "grrrRrrrrg", "gg......gg", "g........g", "..........", "..........", ".........."] },
+  flare: { pal: { y: "#ffd23f", w: "#ffffff", o: "#ff8a2b", r: "#ff3b4e" }, rows: ["y...w...y.", ".y..w..y..", "..y.w.y...", "...www....", "wwwwwwwww.", "...www....", "..y.w.y...", ".y..r..y..", "....r.....", "....r....."] },
+  railgun: { pal: { c: "#3fd7ff", w: "#ffffff", g: "#4a5068", G: "#7d8499" }, rows: ["..........", "gggggg....", "gGGGGGcccc", "gGwwwwwwww", "gGGGGGcccc", "gggggg....", "..g.......", ".gg.......", "..........", ".........."] },
+  flame: { pal: { r: "#ff3b4e", o: "#ff8a2b", y: "#ffd23f", g: "#dfe4ee" }, rows: ["......rr..", "....rroor.", "gg.rooyyor", "ggrooyyyyo", "ggooyyyyyy", "ggrooyyyyo", "gg.rooyyor", "....rroor.", "......rr..", ".........."] },
+  napalm: { pal: { r: "#ff3b4e", o: "#ff8a2b", y: "#ffd23f", g: "#dfe4ee", G: "#7d8499" }, rows: ["...gg.....", "...GG.....", "..oooo....", "..oyyo....", "..oooo....", "..........", ".r.o..o.r.", "ro.yoyo.or", "rrooooooor", ".rrrrrrrr."] },
+  afterburner: { pal: { r: "#c0392b", o: "#ff8a2b", y: "#ffd23f", g: "#dfe4ee" }, rows: ["..........", "......rr..", ".....rrrg.", "o.o.rrrr..", "yoyorrrr..", "o.o.rrrr..", ".....rrrg.", "......rr..", "..........", ".........."] },
+  heatbomb: { pal: { r: "#c0392b", R: "#7a1a14", o: "#ff8a2b", y: "#ffd23f" }, rows: ["....y.....", "...o......", "..rrrr....", ".rrooorR..", ".roooooR..", ".rooyooR..", ".roooooR..", ".rrooorR..", "..RRRRR...", ".........."] },
+  firesuit: { pal: { r: "#c0392b", R: "#7a1a14", o: "#ff8a2b", g: "#dfe4ee", v: "#3fd7ff" }, rows: ["o.......o.", ".rrrrrrr..", "rRRRRRRRr.", ".gvvvvvg..", ".gvvvvvg..", "o.ggggg..o", ".rrrrrrr..", "orrrrrrro.", ".rrrrrrr..", "o.......o."] },
+  firering: { pal: { r: "#ff3b4e", o: "#ff8a2b", y: "#ffd23f" }, rows: ["...yoy....", ".oy...yo..", "o.......o.", "y.......y.", "o...r...o.", "y.......y.", "o.......o.", ".oy...yo..", "...yoy....", ".........."] },
+  grenade: { pal: { a: "#4a5528", h: "#8a9a4a", g: "#9aa0b0", y: "#ffd23f" }, rows: ["....gg.y..", "...g..gy..", "...gg.....", "..aaaa....", ".ahhaaa...", ".ahaaaa...", ".aaaaaa...", ".aaaaaa...", "..aaaa....", ".........."] },
+  limpet: { pal: { k: "#2a2e44", r: "#ff3b4e", y: "#ffd23f", w: "#ffffff" }, rows: ["..y...y...", "...y.y....", "..kkkkk...", ".kkrrrkk..", "kkrwwrrkk.", "kkrrrrrkk.", ".kkrrrkk..", "..kkkkk...", ".k.k.k.k..", "k..k.k..k."] },
+  blastjump: { pal: { k: "#2a2e44", o: "#ff8a2b", y: "#ffd23f", r: "#ff3b4e" }, rows: ["...kkk....", "..kkkkk...", "..kkkkk...", "...kkk....", "..........", "..y...y...", ".oyo.oyo..", "roooyooor.", ".rooyoor..", "..rrrrr..."] },
+  jumpmine: { pal: { a: "#4a4f66", h: "#9aa0c0", r: "#ff3b4e", y: "#ffd23f" }, rows: ["....r.....", "...r.r....", "..........", "....y.....", "...hhaa...", "..haaaaa..", "..aaaaaa..", "...aaaa...", ".y.....y..", "y.......y."] },
+  barrel: { pal: { r: "#ff3b4e", R: "#b02a3a", y: "#ffd23f", k: "#17121f" }, rows: ["..rrrrr...", ".rRRRRRr..", ".ryyyyyR..", ".rrrrrrR..", ".rrkyrrR..", ".rrykrrR..", ".rrrrrrR..", ".ryyyyyR..", ".rRRRRRr..", "..rrrrr..."] },
+  nuke: { pal: { y: "#ffd23f", k: "#17121f", o: "#ff8a2b", r: "#ff3b4e" }, rows: ["..yyyyy...", ".yykkkyy..", "yykyyykyy.", "ykkyyykky.", "ykyykyyky.", "yyyykyyyy.", "ykkyyykky.", ".yykkkyy..", "..yyyyy...", ".........."] },
   coins: { pal: { y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" }, rows: [".yyy.", "ywyyY", "yyYyY", "yyyYY", ".YYY."] },
   medal: {
     pal: { r: "#ff5f6d", b: "#4fb4ff", y: "#ffd23f", Y: "#c08a10", w: "#fff6c8" },

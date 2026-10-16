@@ -123,6 +123,21 @@ export interface Fighter {
   anchor: number;
   /** ventana de Atrapada perfecta */
   catchBuff: number;
+  /** skill "mantenida" (visor) y cuánto lleva mantenida */
+  hold: Slot | null;
+  holdT: number;
+  /** cegado: apunta con desvío y menos alcance */
+  blind: number;
+  /** quemaduras (daño por segundo) */
+  burns: { dps: number; t: number; src: Fighter | null; acc: number }[];
+  /** reduce el daño recibido un guardK y lo acumula en `absorbed` */
+  guard: number;
+  guardK: number;
+  absorbed: number;
+  /** va más lento por su propia arma (lanzallamas) */
+  selfSlow: number;
+  /** bomba pegada: explota al acabar; si el portador toca a un aliado suyo, salta */
+  sticky: { t: number; src: Fighter; boom: (w: World, at: Fighter) => void } | null;
   stats: { dmg: number; heal: number; kos: number };
   bot: Bot | null;
 }
@@ -154,6 +169,12 @@ export interface Proj {
   ghost: boolean;
   /** robots que arrastra consigo (gran bumerán) */
   carry: Fighter[];
+  /** mecha: explota (onEnd) al acabarse aunque siga rodando */
+  fuse: number;
+  /** frenado por segundo (granadas que ruedan) */
+  fric: number;
+  /** al chocar contra columna, objeto o borde (antes de onEnd) */
+  onWall?: (w: World, p: Proj) => void;
   dead: boolean;
 }
 
@@ -307,6 +328,7 @@ export class World {
         shield: 0, shieldT: 0, hots: [], stormAcc: 0, motion: null, bonus: 0, combo: 0, comboT: 0, flash: 0, lastHitBy: null,
         charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammo: {}, ammoLock: 0,
         dmgUp: 0, dmgUpK: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
+        hold: null, holdT: 0, blind: 0, burns: [], guard: 0, guardK: 0, absorbed: 0, selfSlow: 0, sticky: null,
         stats: { dmg: 0, heal: 0, kos: 0 },
         bot: s.human ? null : { diff: s.diff ?? 1, think: 0, strafe: this.rng.next() < 0.5 ? 1 : -1, strafeT: 0, target: null, aimErr: 0, reactT: 0, wantB: 0, holdT: 0 },
       };
@@ -336,6 +358,7 @@ export class World {
         shield: 0, shieldT: 0, hots: [], bonus: 0, combo: 0, flash: 0, lastHitBy: null, face: f.team ? Math.PI : 0,
         charge: null, chargeK: 0, preCharge: 0, heat: 0, overheat: 0, heatIdle: 0, ramp: 0, ammoLock: 0,
         dmgUp: 0, markT: 0, markBy: null, anchor: 0, catchBuff: 0,
+        hold: null, holdT: 0, blind: 0, burns: [], guard: 0, absorbed: 0, selfSlow: 0, sticky: null,
       });
       // la energía se conserva entre rondas (como en Battlerite), las recargas no
       for (const s of SLOTS) {
@@ -580,8 +603,16 @@ export class World {
       ay = Math.sin(f.face);
       d = 1;
     }
-    const dx = ax / d, dy = ay / d;
-    const dist = s.range ? Math.min(d, s.range) : 0;
+    let dx = ax / d, dy = ay / d;
+    let range = s.range;
+    if (f.blind > 0) {
+      // cegado: desvío aleatorio y un 30% menos de alcance
+      const an = Math.atan2(dy, dx) + (this.rng.next() - 0.5) * 0.7;
+      dx = Math.cos(an);
+      dy = Math.sin(an);
+      range *= 0.7;
+    }
+    const dist = range ? Math.min(d, range) : 0;
     let tx = f.x + dx * dist, ty = f.y + dy * dist;
     [tx, ty] = clampArena(tx, ty, 4);
     return { dx, dy, dist, tx, ty };
@@ -593,6 +624,7 @@ export class World {
 
   canUse(f: Fighter, slot: Slot) {
     const s = f.def.skills[slot];
+    if (s.hold) return false;
     if (s.charges) {
       if (!f.ammo[slot] || f.ammoLock > 0) return false;
     } else if (f.cds[slot] > 0) return false;
@@ -607,13 +639,39 @@ export class World {
   updateFighter(f: Fighter, dt: number) {
     // ---- estados
     const dec = (k: "stun" | "root" | "silence" | "sleep" | "slow" | "haste" | "invuln" | "stealth" | "counter" | "block" | "fear" | "deflect" | "mist" | "spin" | "lock"
-      | "overheat" | "ammoLock" | "dmgUp" | "markT" | "anchor" | "catchBuff") => {
+      | "overheat" | "ammoLock" | "dmgUp" | "markT" | "anchor" | "catchBuff" | "blind" | "guard" | "selfSlow") => {
       if (f[k] > 0) f[k] = Math.max(0, f[k] - dt);
     };
     dec("stun"); dec("root"); dec("silence"); dec("sleep"); dec("slow"); dec("haste");
     dec("invuln"); dec("stealth"); dec("counter"); dec("block");
     dec("fear"); dec("deflect"); dec("mist"); dec("spin"); dec("lock");
     dec("overheat"); dec("ammoLock"); dec("dmgUp"); dec("markT"); dec("anchor"); dec("catchBuff");
+    dec("blind"); dec("guard"); dec("selfSlow");
+    for (const b of f.burns) {
+      b.acc += b.dps * Math.min(dt, b.t);
+      b.t -= dt;
+      if (b.acc >= 2 || (b.t <= 0 && b.acc >= 1)) {
+        const n = Math.floor(b.acc);
+        b.acc -= n;
+        this.damage(b.src, f, n, { dot: true });
+        if (f.dead) return;
+      }
+    }
+    f.burns = f.burns.filter((b) => b.t > 0);
+    if (f.sticky) {
+      const st = f.sticky;
+      st.t -= dt;
+      // salta a otro robot del mismo equipo que lo toque
+      const other = this.fighters.find((o) => o !== f && !o.dead && o.team === f.team && !o.sticky && dist2(o.x, o.y, f.x, f.y) < 14 * 14);
+      if (other && st.t > 0.2) {
+        f.sticky = null;
+        other.sticky = st;
+        this.popup(other.x, other.y - 30, "¡SALTA!", "#ff8a2b");
+      } else if (st.t <= 0 || f.dead) {
+        f.sticky = null;
+        st.boom(this, f);
+      }
+    }
     if (f.def.heat) {
       f.heatIdle += dt;
       // sobrecalentado: el arma se enfría del todo mientras dura el bloqueo
@@ -707,6 +765,12 @@ export class World {
       }
     }
 
+    // ---- skill mantenida (visor): activa mientras el botón esté pulsado
+    f.hold = null;
+    for (const sl of SLOTS)
+      if (f.def.skills[sl].hold && f.input.b & SLOT_BIT[sl] && this.canAct(f) && this.phase === "fight" && !(sl !== "r2" && f.silence > 0)) f.hold = sl;
+    f.holdT = f.hold ? f.holdT + dt : 0;
+
     // ---- carga al soltar (arco): se dispara al soltar el botón
     if (f.charge) {
       const c = f.charge;
@@ -748,7 +812,8 @@ export class World {
     if (f.haste > 0) sp *= 1 + f.hasteK;
     if (f.cast) sp *= f.def.skills[f.cast.slot].castMove;
     if (f.charge) sp *= f.def.skills[f.charge.slot].charge!.move;
-    if (f.anchor > 0) sp = 0;
+    if (f.anchor > 0 || f.hold) sp = 0;
+    if (f.selfSlow > 0) sp *= 0.85;
     if (f.block > 0) sp *= 0.5;
     if (f.spin > 0) sp *= 0.75;
     let { mx, my } = f.input;
@@ -855,7 +920,7 @@ export class World {
     return !t.dead && !(t.motion?.air) && t.invuln <= 0;
   }
 
-  damage(src: Fighter | null, t: Fighter, amt: number, o: { from?: [number, number]; pure?: boolean; melee?: boolean } = {}): boolean {
+  damage(src: Fighter | null, t: Fighter, amt: number, o: { from?: [number, number]; pure?: boolean; melee?: boolean; dot?: boolean } = {}): boolean {
     if (t.dead || amt <= 0) return false;
     if (!o.pure) {
       if (t.motion?.air || t.invuln > 0) return false;
@@ -884,6 +949,10 @@ export class World {
     }
     if (src && src.dmgUp > 0) amt *= 1 + src.dmgUpK;
     if (src && t.markT > 0 && t.markBy === src) amt *= 1.3;
+    if (t.guard > 0) {
+      t.absorbed += amt * t.guardK;
+      amt *= 1 - t.guardK;
+    }
     amt = Math.round(amt);
     let left = amt;
     if (t.shield > 0) {
@@ -900,8 +969,8 @@ export class World {
       src.stats.dmg += amt;
       src.energy = Math.min(ENERGY_MAX, src.energy + amt * ENERGY_PER_DMG);
     }
-    this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, left < amt && !left ? SHIELD_POPUP : DMG_POPUP);
-    this.sfx(o.melee ? "melee" : "hit");
+    if (!o.dot || amt >= 3) this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, left < amt && !left ? SHIELD_POPUP : DMG_POPUP);
+    if (!o.dot) this.sfx(o.melee ? "melee" : "hit");
     if (t.hp <= 0) this.kill(t);
     return true;
   }
@@ -937,6 +1006,22 @@ export class World {
     t.shield = Math.max(t.shield, amt);
     t.shieldT = Math.max(t.shieldT, dur);
     this.ev("n", Math.round(t.x), Math.round(t.y - 18), amt, SHIELD_POPUP);
+  }
+
+  /** Quema: daño por segundo (no se acumula con la misma fuente; renueva). */
+  burn(t: Fighter, src: Fighter | null, dps: number, dur: number) {
+    if (t.dead) return;
+    const b = t.burns.find((q) => q.src === src);
+    if (b) {
+      b.t = Math.max(b.t, dur);
+      b.dps = Math.max(b.dps, dps);
+    } else t.burns.push({ dps, t: dur, src, acc: 0 });
+  }
+
+  blindFor(t: Fighter, d: number) {
+    if (!this.ccable(t)) return;
+    t.blind = Math.max(t.blind, d);
+    this.popup(t.x, t.y - 26, "¡CEGADO!", "#fff6c8");
   }
 
   /** Sube el calor; a 100 se sobrecalienta y bloquea el básico. */
@@ -1136,12 +1221,14 @@ export class World {
     kind: Proj["kind"]; dx: number; dy: number; speed: number; range: number; r?: number; dmg?: number; allies?: boolean; pierce?: boolean;
     onHit: Proj["onHit"]; onEnd?: Proj["onEnd"]; from?: [number, number];
     ret?: boolean; onCatch?: (w: World, p: Proj) => void; bounces?: number; ghost?: boolean;
+    fuse?: number; fric?: number; onWall?: Proj["onWall"];
   }) {
     const [sx, sy] = o.from ?? [f.x + o.dx * 6, f.y + o.dy * 6];
     const p: Proj = {
       id: this.nextId++, owner: f, team: f.team, kind: o.kind, x: sx, y: sy, vx: o.dx * o.speed, vy: o.dy * o.speed, r: o.r ?? 3,
       dist: o.range, orbDmg: o.dmg ?? 0, allies: !!o.allies, pierce: !!o.pierce, hit: new Set(), onHit: o.onHit, onEnd: o.onEnd,
-      ret: o.ret ? { back: false, t: 0, onCatch: o.onCatch } : undefined, bounces: o.bounces ?? 0, ghost: !!o.ghost, carry: [], dead: false,
+      ret: o.ret ? { back: false, t: 0, onCatch: o.onCatch } : undefined, bounces: o.bounces ?? 0, ghost: !!o.ghost, carry: [],
+      fuse: o.fuse ?? 0, fric: o.fric ?? 0, onWall: o.onWall, dead: false,
     };
     this.projs.push(p);
     return p;
@@ -1150,6 +1237,19 @@ export class World {
   updateProjs(dt: number) {
     for (const p of this.projs) {
       if (p.dead) continue;
+      if (p.fric) {
+        const k = Math.exp(-p.fric * dt);
+        p.vx *= k;
+        p.vy *= k;
+      }
+      if (p.fuse) {
+        p.fuse -= dt;
+        if (p.fuse <= 0) {
+          p.dead = true;
+          p.onEnd?.(this, p);
+          continue;
+        }
+      }
       const sp = Math.hypot(p.vx, p.vy);
       const steps = Math.max(1, Math.ceil((sp * dt) / 5));
       const sdt = dt / steps;
@@ -1253,7 +1353,8 @@ export class World {
           this.sfx("ricochet");
           continue;
         }
-        if (n || stop || p.dist <= 0) {
+        if (n || stop || (p.dist <= 0 && !p.fuse)) {
+          if (n) p.onWall?.(this, p);
           if (this.turnBack(p)) continue;
           p.dead = true;
           if (p.onEnd) p.onEnd(this, p);
@@ -1390,6 +1491,11 @@ export class World {
       if (a.anchor > 0) st |= ST.anchor;
       if (a.markT > 0) st |= ST.mark;
       if (a.dmgUp > 0) st |= ST.empower;
+      if (a.blind > 0) st |= ST.blind;
+      if (a.burns.length) st |= ST.burn;
+      if (a.hold) st |= ST.scope;
+      if (a.guard > 0) st |= ST.guard;
+      if (a.sticky) st |= ST.sticky;
       const cs = a.cast ? SLOTS.indexOf(a.cast.slot) : a.charge ? SLOTS.indexOf(a.charge.slot) : -1;
       const cp = a.cast ? Math.round((a.cast.t / a.cast.total) * 100) : a.charge ? Math.round((a.charge.t / a.charge.max) * 100) : 0;
       const snap: FSnap = {
